@@ -16,5 +16,6 @@ pluginManagement {
 
 rootProject.name = "quarkus-outbox"
 
-include("api")
-include("impl")
+include("domain-api")
+include("domain-impl")
+include("adapter-out-persistence-mongodb")
