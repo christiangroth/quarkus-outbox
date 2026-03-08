@@ -4,7 +4,7 @@ plugins {
 }
 
 dependencies {
-  api(project(":util-outbox-api"))
+  api(project(":api"))
 
   implementation(enforcedPlatform(libs.quarkusBom))
   implementation("io.quarkus:quarkus-arc")
