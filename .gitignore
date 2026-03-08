@@ -1,0 +1,10 @@
+**/.gradle
+**/.idea
+**/.kotlin
+**/build
+*.iml
+*.ipr
+*.iws
+*.DS_Store
+.env
+

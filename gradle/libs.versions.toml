@@ -1,0 +1,32 @@
+[versions]
+assertJ = "3.27.7"
+buildTimeTracker = "5.0.1"
+detekt = "2.0.0-alpha.2"
+junit = "6.0.3"
+kotlin = "2.3.10"
+kotlinLogging = "3.0.5"
+kotlinxDatetime = "0.7.1"
+kover = "0.9.7"
+mockk = "1.14.9"
+quarkus = "3.32.1"
+release = "3.1.0"
+versionCatalogUpdate = "1.1.0"
+
+[libraries]
+assertJ = { module = "org.assertj:assertj-core", version.ref = "assertJ" }
+detekt = { module = "dev.detekt:detekt-gradle-plugin", version.ref = "detekt" }
+junit = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+kotlinGradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+kotlinLogging = { module = "io.github.microutils:kotlin-logging", version.ref = "kotlinLogging" }
+kotlinxDatetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime-jvm", version.ref = "kotlinxDatetime" }
+kover = { module = "org.jetbrains.kotlinx:kover-gradle-plugin", version.ref = "kover" }
+mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
+quarkusAgroal = { module = "io.quarkus:quarkus-agroal" }
+quarkusBom = { module = "io.quarkus.platform:quarkus-bom", version.ref = "quarkus" }
+
+[plugins]
+allopen = { id = "org.jetbrains.kotlin.plugin.allopen", version.ref = "kotlin" }
+buildTimeTracker = { id = "com.asarkar.gradle.build-time-tracker", version.ref = "buildTimeTracker" }
+quarkus = { id = "io.quarkus", version.ref = "quarkus" }
+release = { id = "net.researchgate.release", version.ref = "release" }
+versionCatalogUpdate = { id = "nl.littlerobots.version-catalog-update", version.ref = "versionCatalogUpdate" }

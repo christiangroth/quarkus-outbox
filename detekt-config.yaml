@@ -1,0 +1,21 @@
+config:
+  warningsAsErrors: true
+
+complexity:
+  CyclomaticComplexMethod:
+    active: false
+  LongMethod:
+    active: false
+  TooManyFunctions:
+    ignorePrivate: true
+    active: false
+
+style:
+  MaxLineLength:
+    maxLineLength: 170
+  ReturnCount:
+    max: 3
+
+naming:
+  MatchingDeclarationName:
+    active: false

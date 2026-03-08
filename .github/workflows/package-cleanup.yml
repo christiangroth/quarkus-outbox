@@ -1,0 +1,72 @@
+name: Maven Package Registry Cleanup
+
+on:
+  schedule:
+    - cron: '0 3 1 * *'  # Jeden Ersten des Monats, um w3 Uhr
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Delete old package versions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const KEEP_MINIMUM = 3;
+            const MAX_AGE_DAYS = 180;
+            const PACKAGE_TYPE = 'maven';
+            const ORG = 'christiangroth';
+            const REPO = 'quarkus-outbox';
+            
+            const cutoffDate = new Date();
+            cutoffDate.setDate(cutoffDate.getDate() - MAX_AGE_DAYS);
+            
+            // Alle Packages im Repo laden
+            const packages = await github.paginate(
+              github.rest.packages.listPackagesForAuthenticatedUser,
+              { package_type: PACKAGE_TYPE }
+            );
+            
+            const repoPackages = packages.filter(pkg =>
+              pkg.repository?.name === REPO
+            );
+            
+            console.log(`Gefundene Packages: ${repoPackages.length}`);
+            
+            for (const pkg of repoPackages) {
+              console.log(`\nVerarbeite Package: ${pkg.name}`);
+            
+              const versions = await github.paginate(
+                github.rest.packages.getAllPackageVersionsForPackageOwnedByAuthenticatedUser,
+                { package_type: PACKAGE_TYPE, package_name: pkg.name }
+              );
+            
+              // Sortieren: neueste zuerst
+              versions.sort((a, b) =>
+                new Date(b.created_at) - new Date(a.created_at)
+              );
+            
+              console.log(`  Versionen gesamt: ${versions.length}`);
+            
+              const toDelete = versions.filter((version, index) => {
+                const isOldEnough = new Date(version.created_at) < cutoffDate;
+                const isBeyondMinimum = index >= KEEP_MINIMUM;
+                return isOldEnough && isBeyondMinimum;
+              });
+            
+              console.log(`  Zu löschen: ${toDelete.length}`);
+            
+              for (const version of toDelete) {
+                console.log(`  🗑 Lösche ${version.name} (erstellt: ${version.created_at})`);
+                await github.rest.packages.deletePackageVersionForAuthenticatedUser({
+                  package_type: PACKAGE_TYPE,
+                  package_name: pkg.name,
+                  package_version_id: version.id
+                });
+              }
+            }
+            
+            console.log('\n✅ Cleanup abgeschlossen');
