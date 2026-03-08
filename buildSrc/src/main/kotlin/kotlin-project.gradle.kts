@@ -32,6 +32,7 @@ dependencies {
   implementation("org.jetbrains.kotlin:kotlin-reflect")
   implementation("io.quarkus:quarkus-arc")
   implementation(libs.findLibrary("kotlinLogging").get())
+  implementation(libs.findLibrary("kotlinxCoroutines").get())
   implementation(libs.findLibrary("kotlinxDatetime").get())
 
   testImplementation(libs.findLibrary("assertJ").get())
