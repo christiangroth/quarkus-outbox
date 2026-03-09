@@ -1,3 +1,11 @@
+# 0.2.1 (2026.03.09)
+
+## Bugfixes / Chore
+* remove-kotlin-bom: Removed explicit Kotlin BOM from convention plugin, as it is already managed by the Quarkus BOM.
+
+
+
+---
 # 0.2.0 (2026.03.08)
 
 ## New Features
