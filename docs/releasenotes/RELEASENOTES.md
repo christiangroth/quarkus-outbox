@@ -1,3 +1,11 @@
+# 0.3.0 (2026.03.09)
+
+## New Features
+* add-sources-publishing: Sources JARs are now published alongside the main artifacts.
+
+
+
+---
 # 0.2.1 (2026.03.09)
 
 ## Bugfixes / Chore
