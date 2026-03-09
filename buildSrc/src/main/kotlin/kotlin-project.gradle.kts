@@ -26,7 +26,6 @@ repositories {
 val libs = extensions.getByType(VersionCatalogsExtension::class.java).named("libs")
 
 dependencies {
-  implementation(platform("org.jetbrains.kotlin:kotlin-bom"))
   implementation(platform(libs.findLibrary("quarkusBom").get()))
   implementation("org.jetbrains.kotlin:kotlin-stdlib-jdk8")
   implementation("org.jetbrains.kotlin:kotlin-reflect")
