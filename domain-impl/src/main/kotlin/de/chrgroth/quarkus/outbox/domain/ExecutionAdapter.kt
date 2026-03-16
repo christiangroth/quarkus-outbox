@@ -29,7 +29,7 @@ class ExecutionAdapter(
     if (partition.pauseOnRateLimit) {
       partitionObservers.forEach { it.onPartitionPaused(partition) }
     }
-    scope.launch {
+    coroutinesAdapter.scope().launch {
       delay(retryAfter.toMillis())
       if (partition.pauseOnRateLimit) {
         activatePartition(partition)
