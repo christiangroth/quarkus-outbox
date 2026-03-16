@@ -1,0 +1,12 @@
+steps:
+  - name: Set up Java
+    uses: actions/setup-java@v4
+    with:
+      java-version: '25'
+      distribution: 'temurin'
+  - name: Setup Gradle
+    uses: gradle/actions/setup-gradle@v5
+  - name: Download dependencies
+    run: ./gradlew dependencies
+    env:
+      GHCR_PAT: ${{ secrets.GHCR_PAT }}
