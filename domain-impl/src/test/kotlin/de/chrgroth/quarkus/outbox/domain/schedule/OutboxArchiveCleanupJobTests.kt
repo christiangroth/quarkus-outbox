@@ -1,7 +1,6 @@
-package de.chrgroth.quarkus.outbox.domain
+package de.chrgroth.quarkus.outbox.domain.schedule
 
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
-import de.chrgroth.quarkus.outbox.domain.schedule.OutboxArchiveCleanupJob
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.slot
