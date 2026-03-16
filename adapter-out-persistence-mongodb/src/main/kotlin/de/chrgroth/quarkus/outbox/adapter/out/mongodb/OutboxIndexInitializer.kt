@@ -1,4 +1,4 @@
-package de.chrgroth.quarkus.outbox.domain
+package de.chrgroth.quarkus.outbox.adapter.out.mongodb
 
 import com.mongodb.client.MongoCollection
 import com.mongodb.client.model.IndexOptions

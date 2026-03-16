@@ -1,4 +1,4 @@
-package de.chrgroth.quarkus.outbox.domain
+package de.chrgroth.quarkus.outbox.adapter.out.mongodb
 
 import com.mongodb.client.model.FindOneAndUpdateOptions
 import com.mongodb.client.model.Filters
@@ -6,6 +6,13 @@ import com.mongodb.client.model.ReplaceOptions
 import com.mongodb.client.model.ReturnDocument
 import com.mongodb.client.model.Sorts
 import com.mongodb.client.model.Updates
+import de.chrgroth.quarkus.outbox.domain.OutboxEvent
+import de.chrgroth.quarkus.outbox.domain.OutboxPartition
+import de.chrgroth.quarkus.outbox.domain.OutboxPartitionInfo
+import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
+import de.chrgroth.quarkus.outbox.domain.OutboxTask
+import de.chrgroth.quarkus.outbox.domain.OutboxTaskPriority
+import de.chrgroth.quarkus.outbox.domain.OutboxTaskStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.inject.Inject
