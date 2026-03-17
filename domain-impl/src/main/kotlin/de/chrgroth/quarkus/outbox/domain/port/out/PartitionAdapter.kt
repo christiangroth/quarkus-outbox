@@ -1,8 +1,8 @@
-package de.chrgroth.quarkus.outbox.domain
+package de.chrgroth.quarkus.outbox.domain.port.out
 
+import de.chrgroth.quarkus.outbox.domain.OutboxPartition
+import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
 import de.chrgroth.quarkus.outbox.domain.port.`in`.PartitionPort
-import de.chrgroth.quarkus.outbox.domain.port.out.OutboxPartitionObserver
-import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
 import io.micrometer.core.instrument.Gauge
 import io.micrometer.core.instrument.MeterRegistry
 import jakarta.enterprise.context.ApplicationScoped

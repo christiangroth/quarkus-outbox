@@ -1,6 +1,9 @@
-package de.chrgroth.quarkus.outbox.domain
+package de.chrgroth.quarkus.outbox.domain.port.out
 
-import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
+import de.chrgroth.quarkus.outbox.domain.CoroutinesAdapter
+import de.chrgroth.quarkus.outbox.domain.OutboxEvent
+import de.chrgroth.quarkus.outbox.domain.OutboxPartition
+import de.chrgroth.quarkus.outbox.domain.OutboxTaskPriority
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import io.mockk.every
 import io.mockk.mockk

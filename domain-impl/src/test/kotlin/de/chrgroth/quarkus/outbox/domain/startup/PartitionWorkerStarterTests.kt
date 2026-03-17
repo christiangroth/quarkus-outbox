@@ -6,8 +6,8 @@ import de.chrgroth.quarkus.outbox.domain.ExecutionAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionInfo
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
-import de.chrgroth.quarkus.outbox.domain.PartitionAdapter
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
+import de.chrgroth.quarkus.outbox.domain.port.out.PartitionAdapter
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -55,7 +55,7 @@ class PartitionWorkerStarterTests {
   fun `onStart activates and signals active partition`() {
     every { executionAdapter.resetStaleProcessingTasks() } just runs
     every { application.getAllPartitions() } returns listOf(partition)
-    every { repository.findPartition(partition) } returns OutboxPartitionInfo(
+    every { repository.findOrCreatePartition(partition) } returns OutboxPartitionInfo(
       key = partition.key,
       status = OutboxPartitionStatus.ACTIVE.name,
       statusReason = null,
@@ -70,23 +70,10 @@ class PartitionWorkerStarterTests {
   }
 
   @Test
-  fun `onStart activates and signals partition with no persisted status`() {
-    every { executionAdapter.resetStaleProcessingTasks() } just runs
-    every { application.getAllPartitions() } returns listOf(partition)
-    every { repository.findPartition(partition) } returns null
-    every { partitionAdapter.activatePartition(partition) } just runs
-
-    recovery.onStart(startupEvent)
-
-    verify { partitionAdapter.activatePartition(partition) }
-    verify { coroutinesAdapter.wakeUp(partition) }
-  }
-
-  @Test
   fun `onStart does not reactivate manually paused partition with null pausedUntil`() {
     every { executionAdapter.resetStaleProcessingTasks() } just runs
     every { application.getAllPartitions() } returns listOf(partition)
-    every { repository.findPartition(partition) } returns OutboxPartitionInfo(
+    every { repository.findOrCreatePartition(partition) } returns OutboxPartitionInfo(
       key = partition.key,
       status = OutboxPartitionStatus.PAUSED.name,
       statusReason = "manual",
@@ -103,7 +90,7 @@ class PartitionWorkerStarterTests {
   fun `onStart immediately reactivates paused partition whose pausedUntil has already passed`() {
     every { executionAdapter.resetStaleProcessingTasks() } just runs
     every { application.getAllPartitions() } returns listOf(partition)
-    every { repository.findPartition(partition) } returns OutboxPartitionInfo(
+    every { repository.findOrCreatePartition(partition) } returns OutboxPartitionInfo(
       key = partition.key,
       status = OutboxPartitionStatus.PAUSED.name,
       statusReason = "rate_limited",
@@ -121,7 +108,7 @@ class PartitionWorkerStarterTests {
   fun `onStart defers activation for paused partition whose pausedUntil is in the future`() {
     every { executionAdapter.resetStaleProcessingTasks() } just runs
     every { application.getAllPartitions() } returns listOf(partition)
-    every { repository.findPartition(partition) } returns OutboxPartitionInfo(
+    every { repository.findOrCreatePartition(partition) } returns OutboxPartitionInfo(
       key = partition.key,
       status = OutboxPartitionStatus.PAUSED.name,
       statusReason = "rate_limited",
@@ -144,7 +131,12 @@ class PartitionWorkerStarterTests {
     }
     every { executionAdapter.resetStaleProcessingTasks() } just runs
     every { application.getAllPartitions() } returns listOf(partitionA, partitionB)
-    every { repository.findPartition(any()) } returns null
+    every { repository.findOrCreatePartition(any()) } returns OutboxPartitionInfo(
+      key = "any",
+      status = OutboxPartitionStatus.ACTIVE.name,
+      statusReason = null,
+      pausedUntil = null,
+    )
     every { partitionAdapter.activatePartition(any()) } just runs
 
     recovery.onStart(startupEvent)
@@ -160,7 +152,12 @@ class PartitionWorkerStarterTests {
     val activationOrder = mutableListOf<String>()
     every { executionAdapter.resetStaleProcessingTasks() } answers { activationOrder.add("reset") }
     every { application.getAllPartitions() } returns listOf(partition)
-    every { repository.findPartition(partition) } returns null
+    every { repository.findOrCreatePartition(partition) } returns OutboxPartitionInfo(
+      key = partition.key,
+      status = OutboxPartitionStatus.ACTIVE.name,
+      statusReason = null,
+      pausedUntil = null,
+    )
     every { partitionAdapter.activatePartition(partition) } answers { activationOrder.add("activate") }
 
     recovery.onStart(startupEvent)
@@ -168,4 +165,5 @@ class PartitionWorkerStarterTests {
     assertThat(activationOrder).containsExactly("reset", "activate")
   }
 }
+
 

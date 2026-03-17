@@ -222,6 +222,17 @@ class MongoOutboxRepository : OutboxRepository {
             outboxPartitionDocumentRepository.findById(partition.key)?.toInfo()
         }
 
+    override fun findOrCreatePartition(partition: OutboxPartition): OutboxPartitionInfo {
+        val doc = outboxQueryMetrics.timed("outbox.findOrCreatePartition") {
+            outboxPartitionDocumentRepository.mongoCollection().findOneAndUpdate(
+                Filters.eq("_id", partition.key),
+                Updates.setOnInsert("status", OutboxPartitionStatus.ACTIVE.name),
+                FindOneAndUpdateOptions().upsert(true).returnDocument(ReturnDocument.AFTER),
+            )
+        }
+        return doc!!.toInfo()
+    }
+
     private fun OutboxPartitionDocument.toInfo() = OutboxPartitionInfo(
         key = partitionKey,
         status = status,

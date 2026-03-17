@@ -1,5 +1,6 @@
 package de.chrgroth.quarkus.outbox.domain
 
+import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import jakarta.annotation.PreDestroy
 import jakarta.enterprise.context.ApplicationScoped
 import kotlinx.coroutines.CoroutineScope
@@ -8,21 +9,20 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import java.util.concurrent.ConcurrentHashMap
 
-// TODO out port?
 @ApplicationScoped
 @Suppress("Unused")
-class CoroutinesAdapter {
+class CoroutinesAdapter : CoroutinesPort {
 
   private val scope = CoroutineScope(Dispatchers.IO)
   private val channels: MutableMap<String, Channel<Unit>> = ConcurrentHashMap()
 
-  fun scope() = scope
+  override fun scope() = scope
 
-  fun wakeUp(partition: OutboxPartition) {
+  override fun wakeUp(partition: OutboxPartition) {
     channelFor(partition).trySend(Unit)
   }
 
-  suspend fun waitOnSignal(partition: OutboxPartition) {
+  override suspend fun waitOnSignal(partition: OutboxPartition) {
     channelFor(partition).receive()
   }
 
@@ -36,3 +36,4 @@ class CoroutinesAdapter {
     scope.cancel()
   }
 }
+

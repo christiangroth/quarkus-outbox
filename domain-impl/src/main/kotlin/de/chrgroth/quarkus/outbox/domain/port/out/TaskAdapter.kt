@@ -1,7 +1,9 @@
-package de.chrgroth.quarkus.outbox.domain
+package de.chrgroth.quarkus.outbox.domain.port.out
 
+import de.chrgroth.quarkus.outbox.domain.OutboxEvent
+import de.chrgroth.quarkus.outbox.domain.OutboxPartition
+import de.chrgroth.quarkus.outbox.domain.OutboxTaskPriority
 import de.chrgroth.quarkus.outbox.domain.port.`in`.TaskPort
-import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
 import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.MeterRegistry
 import jakarta.enterprise.context.ApplicationScoped
@@ -10,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap
 @ApplicationScoped
 class TaskAdapter(
   private val repository: OutboxRepository,
-  private val coroutinesAdapter: CoroutinesAdapter,
+  private val coroutinesPort: CoroutinesPort,
   private val meterRegistry: MeterRegistry,
 ) : TaskPort {
 
@@ -24,7 +26,7 @@ class TaskAdapter(
   ): Boolean {
     val inserted = repository.enqueue(partition, event, payload, priority)
     if (inserted) {
-      coroutinesAdapter.wakeUp(partition)
+      coroutinesPort.wakeUp(partition)
       enqueuedCounters.getOrPut(partition.key) {
         meterRegistry.counter("outbox_tasks_enqueued_total", "partition", partition.key)
       }.increment()

@@ -21,6 +21,7 @@ interface OutboxRepository {
     fun pausePartition(partition: OutboxPartition, reason: String, pausedUntil: Instant)
     fun activatePartition(partition: OutboxPartition)
     fun findPartition(partition: OutboxPartition): OutboxPartitionInfo?
+    fun findOrCreatePartition(partition: OutboxPartition): OutboxPartitionInfo
     fun resetStaleProcessingTasks()
     fun countByPartition(partition: OutboxPartition): Long
     fun archiveFailedTasks(): Long

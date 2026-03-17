@@ -1,12 +1,12 @@
 package de.chrgroth.quarkus.outbox.domain.startup
 
 import de.chrgroth.quarkus.outbox.domain.ApplicationPort
-import de.chrgroth.quarkus.outbox.domain.CoroutinesAdapter
 import de.chrgroth.quarkus.outbox.domain.ExecutionAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
-import de.chrgroth.quarkus.outbox.domain.PartitionAdapter
+import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
+import de.chrgroth.quarkus.outbox.domain.port.out.PartitionAdapter
 import io.quarkus.runtime.StartupEvent
 import jakarta.annotation.Priority
 import jakarta.enterprise.context.ApplicationScoped
@@ -20,7 +20,7 @@ import java.time.Instant
 @ApplicationScoped
 @Suppress("Unused", "UnusedParameter", "SwallowedException")
 class PartitionWorkerStarter(
-  private val coroutinesAdapter: CoroutinesAdapter,
+  private val coroutinesPort: CoroutinesPort,
   private val repository: OutboxRepository,
   private val executionAdapter: ExecutionAdapter,
   private val partitionAdapter: PartitionAdapter,
@@ -28,26 +28,20 @@ class PartitionWorkerStarter(
 ) {
 
   fun onStart(@Observes @Priority(1) event: StartupEvent) {
-
-    // set all executing tasks back to pending
     executionAdapter.resetStaleProcessingTasks()
 
-    application.getAllPartitions().forEach { partition ->
+    val partitions = application.getAllPartitions()
+    partitions.forEach { partition ->
       startup(partition)
-    }
-
-    logger.info { "Outbox startup recovery complete for ${application.getAllPartitions().size} partition(s)" }
-
-    application.getAllPartitions().forEach { partition ->
       startPartitionWorker(partition)
     }
+
+    logger.info { "Outbox startup recovery complete for ${partitions.size} partition(s)" }
   }
 
   private fun startup(partition: OutboxPartition) {
-
-    // TODO findOrCreate so we always have a partition document
-    val partitionInfo = repository.findPartition(partition)
-    if (partitionInfo == null || partitionInfo.status != OutboxPartitionStatus.PAUSED.name) {
+    val partitionInfo = repository.findOrCreatePartition(partition)
+    if (partitionInfo.status != OutboxPartitionStatus.PAUSED.name) {
       recoverActive(partition)
       return
     }
@@ -66,7 +60,7 @@ class PartitionWorkerStarter(
     }
 
     logger.info { "Partition ${partition.key} still paused until $pausedUntil, scheduling delayed activation" }
-    coroutinesAdapter.scope().launch {
+    coroutinesPort.scope().launch {
       delay(pausedUntil.toEpochMilli() - now.toEpochMilli())
       logger.info { "Resuming partition ${partition.key} after delayed activation" }
       recoverActive(partition)
@@ -75,19 +69,19 @@ class PartitionWorkerStarter(
 
   private fun recoverActive(partition: OutboxPartition) {
     partitionAdapter.activatePartition(partition)
-    coroutinesAdapter.wakeUp(partition)
+    coroutinesPort.wakeUp(partition)
   }
 
   private fun startPartitionWorker(partition: OutboxPartition) {
     logger.info { "Starting partition worker for ${partition.key}" }
-    coroutinesAdapter.scope().launch {
+    coroutinesPort.scope().launch {
       val throttleInterval = partition.throttleInterval
       while (isActive) {
-        coroutinesAdapter.waitOnSignal(partition)
+        coroutinesPort.waitOnSignal(partition)
 
         var processed: Boolean
         do {
-          processed = executionAdapter.dispatchNext(partition) { task ->
+          processed = executionAdapter.dispatchTask(partition) { task ->
             application.dispatch(task)
           }
 
@@ -101,4 +95,5 @@ class PartitionWorkerStarter(
 
   companion object : KLogging()
 }
+
 
