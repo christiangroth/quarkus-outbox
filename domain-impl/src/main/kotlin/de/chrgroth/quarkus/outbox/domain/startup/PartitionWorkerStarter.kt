@@ -5,22 +5,25 @@ import de.chrgroth.quarkus.outbox.domain.CoroutinesAdapter
 import de.chrgroth.quarkus.outbox.domain.ExecutionAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
+import de.chrgroth.quarkus.outbox.domain.PartitionAdapter
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
 import io.quarkus.runtime.StartupEvent
 import jakarta.annotation.Priority
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.enterprise.event.Observes
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import mu.KLogging
 import java.time.Instant
 
 @ApplicationScoped
-@Suppress("Unused", "UnusedParameter")
+@Suppress("Unused", "UnusedParameter", "SwallowedException")
 class PartitionWorkerStarter(
   private val coroutinesAdapter: CoroutinesAdapter,
   private val repository: OutboxRepository,
   private val executionAdapter: ExecutionAdapter,
+  private val partitionAdapter: PartitionAdapter,
   private val application: ApplicationPort,
 ) {
 
@@ -34,14 +37,16 @@ class PartitionWorkerStarter(
     }
 
     logger.info { "Outbox startup recovery complete for ${application.getAllPartitions().size} partition(s)" }
+
+    application.getAllPartitions().forEach { partition ->
+      startPartitionWorker(partition)
+    }
   }
 
   private fun startup(partition: OutboxPartition) {
 
     // TODO findOrCreate so we always have a partition document
     val partitionInfo = repository.findPartition(partition)
-    // TODO status should be enum
-    // mo document means active
     if (partitionInfo == null || partitionInfo.status != OutboxPartitionStatus.PAUSED.name) {
       recoverActive(partition)
       return
@@ -69,9 +74,31 @@ class PartitionWorkerStarter(
   }
 
   private fun recoverActive(partition: OutboxPartition) {
-    executionAdapter.activatePartition(partition)
+    partitionAdapter.activatePartition(partition)
     coroutinesAdapter.wakeUp(partition)
+  }
+
+  private fun startPartitionWorker(partition: OutboxPartition) {
+    logger.info { "Starting partition worker for ${partition.key}" }
+    coroutinesAdapter.scope().launch {
+      val throttleInterval = partition.throttleInterval
+      while (isActive) {
+        coroutinesAdapter.waitOnSignal(partition)
+
+        var processed: Boolean
+        do {
+          processed = executionAdapter.dispatchNext(partition) { task ->
+            application.dispatch(task)
+          }
+
+          if (processed && throttleInterval != null) {
+            delay(throttleInterval.toMillis())
+          }
+        } while (processed && isActive)
+      }
+    }
   }
 
   companion object : KLogging()
 }
+

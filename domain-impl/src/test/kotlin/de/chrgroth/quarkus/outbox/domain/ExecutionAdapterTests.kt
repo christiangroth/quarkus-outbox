@@ -1,6 +1,5 @@
 package de.chrgroth.quarkus.outbox.domain
 
-import de.chrgroth.quarkus.outbox.domain.port.out.OutboxPartitionObserver
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import io.mockk.every
@@ -9,7 +8,6 @@ import io.mockk.mockk
 import io.mockk.runs
 import io.mockk.spyk
 import io.mockk.verify
-import jakarta.enterprise.inject.Instance
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
@@ -20,12 +18,7 @@ class ExecutionAdapterTests {
 
   private val repository: OutboxRepository = mockk()
   private val meterRegistry = SimpleMeterRegistry()
-  private val partitionObserver: OutboxPartitionObserver = mockk(relaxed = true)
-
-  @Suppress("UNCHECKED_CAST")
-  private val partitionObservers: Instance<OutboxPartitionObserver> = mockk<Instance<OutboxPartitionObserver>>().also {
-    every { it.iterator() } answers { mutableListOf(partitionObserver).iterator() }
-  }
+  private val partitionAdapter: PartitionAdapter = mockk(relaxed = true)
 
   private val coroutinesAdapter = spyk(CoroutinesAdapter())
 
@@ -38,16 +31,11 @@ class ExecutionAdapterTests {
     override val pauseOnRateLimit = false
   }
 
-  private val outbox = ExecutionAdapter(coroutinesAdapter, repository, meterRegistry, partitionObservers)
+  private val outbox = ExecutionAdapter(coroutinesAdapter, repository, meterRegistry, partitionAdapter)
 
   @AfterEach
   fun tearDown() {
     coroutinesAdapter.onStop()
-  }
-
-  private fun testEvent() = object : OutboxEvent {
-    override val key = "TEST_EVENT"
-    override fun deduplicationKey() = "dedup-key"
   }
 
   private fun task(partitionKey: String = partition.key, attempts: Int = 0) = OutboxTask(
@@ -64,39 +52,6 @@ class ExecutionAdapterTests {
     priority = OutboxTaskPriority.NORMAL,
     lastError = null,
   )
-
-  // --- enqueue ---
-
-  @Test
-  fun `enqueue signals partition and increments counter when task is inserted`() {
-    every { repository.enqueue(partition, any(), any(), any()) } returns true
-
-    val result = outbox.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.NORMAL)
-
-    assertThat(result).isTrue()
-    verify { coroutinesAdapter.wakeUp(partition) }
-    assertThat(meterRegistry.counter("outbox_tasks_enqueued_total", "partition", partition.key).count()).isEqualTo(1.0)
-  }
-
-  @Test
-  fun `enqueue does not signal or increment counter when task is rejected due to deduplication`() {
-    every { repository.enqueue(partition, any(), any(), any()) } returns false
-
-    val result = outbox.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.NORMAL)
-
-    assertThat(result).isFalse()
-    verify(exactly = 0) { coroutinesAdapter.wakeUp(any()) }
-    assertThat(meterRegistry.find("outbox_tasks_enqueued_total").counter()).isNull()
-  }
-
-  @Test
-  fun `enqueue passes priority to repository`() {
-    every { repository.enqueue(partition, any(), any(), OutboxTaskPriority.HIGH) } returns true
-
-    outbox.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.HIGH)
-
-    verify { repository.enqueue(partition, any(), any(), OutboxTaskPriority.HIGH) }
-  }
 
   // --- processNext ---
 
@@ -265,21 +220,20 @@ class ExecutionAdapterTests {
   }
 
   @Test
-  fun `dispatchNext increments rateLimitedCounter and pauses partition status gauge on rate limited`() {
+  fun `dispatchNext increments rateLimitedCounter and delegates partition pause on rate limited`() {
     val task = task()
     every { repository.claim(partition) } returns task
-    every { repository.findPartition(partition) } returns null
     every { repository.pausePartition(partition, any(), any()) } just runs
     every { repository.reschedule(task, any()) } just runs
 
     outbox.dispatchNext(partition) { OutboxTaskResult.RateLimited(Duration.ofSeconds(30)) }
 
     assertThat(meterRegistry.counter("outbox_tasks_rate_limited_total", "partition", partition.key).count()).isEqualTo(1.0)
-    assertThat(meterRegistry.find("outbox_partition_status").tag("partition", partition.key).gauge()?.value()).isEqualTo(0.0)
+    verify { partitionAdapter.pausePartition(partition) }
   }
 
   @Test
-  fun `dispatchNext increments rateLimitedCounter but does not update gauge when pauseOnRateLimit is false`() {
+  fun `dispatchNext increments rateLimitedCounter but does not delegate pause when pauseOnRateLimit is false`() {
     val task = task(noPausePartition.key)
     every { repository.claim(noPausePartition) } returns task
     every { repository.reschedule(task, any()) } just runs
@@ -287,7 +241,7 @@ class ExecutionAdapterTests {
     outbox.dispatchNext(noPausePartition) { OutboxTaskResult.RateLimited(Duration.ofSeconds(30)) }
 
     assertThat(meterRegistry.counter("outbox_tasks_rate_limited_total", "partition", noPausePartition.key).count()).isEqualTo(1.0)
-    assertThat(meterRegistry.find("outbox_partition_status").tag("partition", noPausePartition.key).gauge()).isNull()
+    verify(exactly = 0) { partitionAdapter.pausePartition(any()) }
   }
 
   @Test
@@ -297,35 +251,6 @@ class ExecutionAdapterTests {
     val result = outbox.dispatchNext(partition) { OutboxTaskResult.Success }
 
     assertThat(result).isFalse()
-  }
-
-  // --- activatePartition ---
-
-  @Test
-  fun `activatePartition calls repository activates gauge and notifies observers`() {
-    every { repository.activatePartition(partition) } just runs
-    every { repository.findPartition(partition) } returns null
-
-    outbox.activatePartition(partition)
-
-    verify { repository.activatePartition(partition) }
-    verify { partitionObserver.onPartitionActivated(partition) }
-    assertThat(meterRegistry.find("outbox_partition_status").tag("partition", partition.key).gauge()?.value()).isEqualTo(1.0)
-  }
-
-  @Test
-  fun `activatePartition initialises gauge from persisted status when already paused`() {
-    every { repository.activatePartition(partition) } just runs
-    every { repository.findPartition(partition) } returns OutboxPartitionInfo(
-      key = partition.key,
-      status = OutboxPartitionStatus.PAUSED.name,
-      statusReason = "rate_limited",
-      pausedUntil = null,
-    )
-
-    outbox.activatePartition(partition)
-
-    assertThat(meterRegistry.find("outbox_partition_status").tag("partition", partition.key).gauge()?.value()).isEqualTo(1.0)
   }
 
   // --- resetStaleProcessingTasks ---
@@ -350,3 +275,4 @@ class ExecutionAdapterTests {
     assertThat(result).isEqualTo(5L)
   }
 }
+

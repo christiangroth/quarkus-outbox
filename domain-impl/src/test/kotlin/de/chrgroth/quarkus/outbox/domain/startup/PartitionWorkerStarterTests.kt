@@ -6,6 +6,7 @@ import de.chrgroth.quarkus.outbox.domain.ExecutionAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionInfo
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
+import de.chrgroth.quarkus.outbox.domain.PartitionAdapter
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
 import io.mockk.every
 import io.mockk.just
@@ -24,9 +25,10 @@ class PartitionWorkerStarterTests {
   private val coroutinesAdapter = spyk(CoroutinesAdapter())
   private val repository: OutboxRepository = mockk()
   private val executionAdapter: ExecutionAdapter = mockk()
+  private val partitionAdapter: PartitionAdapter = mockk()
   private val application: ApplicationPort = mockk()
 
-  private val recovery = PartitionWorkerStarter(coroutinesAdapter, repository, executionAdapter, application)
+  private val recovery = PartitionWorkerStarter(coroutinesAdapter, repository, executionAdapter, partitionAdapter, application)
 
   private val startupEvent = StartupEvent()
 
@@ -59,11 +61,11 @@ class PartitionWorkerStarterTests {
       statusReason = null,
       pausedUntil = null,
     )
-    every { executionAdapter.activatePartition(partition) } just runs
+    every { partitionAdapter.activatePartition(partition) } just runs
 
     recovery.onStart(startupEvent)
 
-    verify { executionAdapter.activatePartition(partition) }
+    verify { partitionAdapter.activatePartition(partition) }
     verify { coroutinesAdapter.wakeUp(partition) }
   }
 
@@ -72,11 +74,11 @@ class PartitionWorkerStarterTests {
     every { executionAdapter.resetStaleProcessingTasks() } just runs
     every { application.getAllPartitions() } returns listOf(partition)
     every { repository.findPartition(partition) } returns null
-    every { executionAdapter.activatePartition(partition) } just runs
+    every { partitionAdapter.activatePartition(partition) } just runs
 
     recovery.onStart(startupEvent)
 
-    verify { executionAdapter.activatePartition(partition) }
+    verify { partitionAdapter.activatePartition(partition) }
     verify { coroutinesAdapter.wakeUp(partition) }
   }
 
@@ -93,7 +95,7 @@ class PartitionWorkerStarterTests {
 
     recovery.onStart(startupEvent)
 
-    verify(exactly = 0) { executionAdapter.activatePartition(any()) }
+    verify(exactly = 0) { partitionAdapter.activatePartition(any()) }
     verify(exactly = 0) { coroutinesAdapter.wakeUp(any()) }
   }
 
@@ -107,11 +109,11 @@ class PartitionWorkerStarterTests {
       statusReason = "rate_limited",
       pausedUntil = Instant.now().minusSeconds(60),
     )
-    every { executionAdapter.activatePartition(partition) } just runs
+    every { partitionAdapter.activatePartition(partition) } just runs
 
     recovery.onStart(startupEvent)
 
-    verify { executionAdapter.activatePartition(partition) }
+    verify { partitionAdapter.activatePartition(partition) }
     verify { coroutinesAdapter.wakeUp(partition) }
   }
 
@@ -128,7 +130,7 @@ class PartitionWorkerStarterTests {
 
     recovery.onStart(startupEvent)
 
-    verify(exactly = 0) { executionAdapter.activatePartition(any()) }
+    verify(exactly = 0) { partitionAdapter.activatePartition(any()) }
     verify(exactly = 0) { coroutinesAdapter.wakeUp(any()) }
   }
 
@@ -143,12 +145,12 @@ class PartitionWorkerStarterTests {
     every { executionAdapter.resetStaleProcessingTasks() } just runs
     every { application.getAllPartitions() } returns listOf(partitionA, partitionB)
     every { repository.findPartition(any()) } returns null
-    every { executionAdapter.activatePartition(any()) } just runs
+    every { partitionAdapter.activatePartition(any()) } just runs
 
     recovery.onStart(startupEvent)
 
-    verify { executionAdapter.activatePartition(partitionA) }
-    verify { executionAdapter.activatePartition(partitionB) }
+    verify { partitionAdapter.activatePartition(partitionA) }
+    verify { partitionAdapter.activatePartition(partitionB) }
     verify { coroutinesAdapter.wakeUp(partitionA) }
     verify { coroutinesAdapter.wakeUp(partitionB) }
   }
@@ -159,10 +161,11 @@ class PartitionWorkerStarterTests {
     every { executionAdapter.resetStaleProcessingTasks() } answers { activationOrder.add("reset") }
     every { application.getAllPartitions() } returns listOf(partition)
     every { repository.findPartition(partition) } returns null
-    every { executionAdapter.activatePartition(partition) } answers { activationOrder.add("activate") }
+    every { partitionAdapter.activatePartition(partition) } answers { activationOrder.add("activate") }
 
     recovery.onStart(startupEvent)
 
     assertThat(activationOrder).containsExactly("reset", "activate")
   }
 }
+
