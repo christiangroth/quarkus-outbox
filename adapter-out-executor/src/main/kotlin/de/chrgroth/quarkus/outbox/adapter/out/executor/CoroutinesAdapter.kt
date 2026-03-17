@@ -1,5 +1,6 @@
-package de.chrgroth.quarkus.outbox.domain
+package de.chrgroth.quarkus.outbox.adapter.out.executor
 
+import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import jakarta.annotation.PreDestroy
 import jakarta.enterprise.context.ApplicationScoped
@@ -36,4 +37,3 @@ class CoroutinesAdapter : CoroutinesPort {
     scope.cancel()
   }
 }
-

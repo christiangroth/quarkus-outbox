@@ -81,9 +81,7 @@ class PartitionWorkerStarter(
 
         var processed: Boolean
         do {
-          processed = executionAdapter.dispatchTask(partition) { task ->
-            application.dispatch(task)
-          }
+          processed = executionAdapter.dispatchTask(partition)
 
           if (processed && throttleInterval != null) {
             delay(throttleInterval.toMillis())
@@ -95,5 +93,4 @@ class PartitionWorkerStarter(
 
   companion object : KLogging()
 }
-
 

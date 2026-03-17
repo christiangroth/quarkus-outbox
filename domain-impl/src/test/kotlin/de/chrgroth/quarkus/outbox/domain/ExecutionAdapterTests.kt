@@ -1,5 +1,6 @@
 package de.chrgroth.quarkus.outbox.domain
 
+import de.chrgroth.quarkus.outbox.adapter.out.executor.CoroutinesAdapter
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionAdapter
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
@@ -20,6 +21,7 @@ class ExecutionAdapterTests {
   private val repository: OutboxRepository = mockk()
   private val meterRegistry = SimpleMeterRegistry()
   private val partitionAdapter: PartitionAdapter = mockk(relaxed = true)
+  private val applicationPort: ApplicationPort = mockk()
 
   private val coroutinesAdapter = spyk(CoroutinesAdapter())
 
@@ -32,7 +34,7 @@ class ExecutionAdapterTests {
     override val pauseOnRateLimit = false
   }
 
-  private val outbox = ExecutionAdapter(coroutinesAdapter, repository, meterRegistry, partitionAdapter)
+  private val outbox = ExecutionAdapter(coroutinesAdapter, repository, meterRegistry, partitionAdapter, applicationPort)
 
   @AfterEach
   fun tearDown() {
@@ -60,7 +62,7 @@ class ExecutionAdapterTests {
   fun `dispatchTask returns false when no task is available`() {
     every { repository.claim(partition) } returns null
 
-    val result = outbox.dispatchTask(partition) { OutboxTaskResult.Success }
+    val result = outbox.dispatchTask(partition)
 
     assertThat(result).isFalse()
   }
@@ -69,9 +71,10 @@ class ExecutionAdapterTests {
   fun `dispatchTask calls complete and increments processedCounter on success`() {
     val task = task()
     every { repository.claim(partition) } returns task
+    every { applicationPort.dispatch(task) } returns OutboxTaskResult.Success
     every { repository.complete(task) } just runs
 
-    val result = outbox.dispatchTask(partition) { OutboxTaskResult.Success }
+    val result = outbox.dispatchTask(partition)
 
     assertThat(result).isTrue()
     verify { repository.complete(task) }
@@ -83,10 +86,11 @@ class ExecutionAdapterTests {
   fun `dispatchTask calls fail with retry time and increments failedCounter when below maxAttempts`() {
     val task = task(attempts = 0)
     every { repository.claim(partition) } returns task
+    every { applicationPort.dispatch(task) } returns OutboxTaskResult.Failed("dispatch failed")
     val capturedNextRetryAt = mutableListOf<Instant?>()
     every { repository.fail(task, any(), captureNullable(capturedNextRetryAt)) } just runs
 
-    val result = outbox.dispatchTask(partition) { OutboxTaskResult.Failed("dispatch failed") }
+    val result = outbox.dispatchTask(partition)
 
     assertThat(result).isTrue()
     assertThat(capturedNextRetryAt.first()).isNotNull()
@@ -97,9 +101,10 @@ class ExecutionAdapterTests {
   fun `dispatchTask calls fail with null nextRetryAt and increments failedCounter when attempts reach maxAttempts`() {
     val task = task(attempts = 4)
     every { repository.claim(partition) } returns task
+    every { applicationPort.dispatch(task) } returns OutboxTaskResult.Failed("permanent failure")
     every { repository.fail(task, any(), null) } just runs
 
-    val result = outbox.dispatchTask(partition) { OutboxTaskResult.Failed("permanent failure") }
+    val result = outbox.dispatchTask(partition)
 
     assertThat(result).isTrue()
     verify { repository.fail(task, "permanent failure", null) }
@@ -110,11 +115,12 @@ class ExecutionAdapterTests {
   fun `dispatchTask uses backoff list correctly for retry delays`() {
     val task = task(attempts = 1) // second attempt -> use backoff[1] = 10s
     every { repository.claim(partition) } returns task
+    every { applicationPort.dispatch(task) } returns OutboxTaskResult.Failed("fail")
     val capturedNextRetryAt = mutableListOf<Instant?>()
     every { repository.fail(task, any(), captureNullable(capturedNextRetryAt)) } just runs
 
     val before = Instant.now()
-    outbox.dispatchTask(partition) { OutboxTaskResult.Failed("fail") }
+    outbox.dispatchTask(partition)
     val after = Instant.now()
 
     val captured = capturedNextRetryAt.first()!!
@@ -126,11 +132,12 @@ class ExecutionAdapterTests {
   fun `dispatchTask uses last backoff entry when attempt index reaches end of backoff list`() {
     val task = task(attempts = 3) // index 3 = last entry in default backoff = 60s
     every { repository.claim(partition) } returns task
+    every { applicationPort.dispatch(task) } returns OutboxTaskResult.Failed("fail")
     val capturedNextRetryAt = mutableListOf<Instant?>()
     every { repository.fail(task, any(), captureNullable(capturedNextRetryAt)) } just runs
 
     val before = Instant.now()
-    outbox.dispatchTask(partition) { OutboxTaskResult.Failed("fail") }
+    outbox.dispatchTask(partition)
 
     val captured = capturedNextRetryAt.first()!!
     assertThat(captured).isAfter(before.plusSeconds(59))
@@ -140,9 +147,10 @@ class ExecutionAdapterTests {
   fun `dispatchTask returns true when task was claimed even on dispatch failure`() {
     val task = task()
     every { repository.claim(partition) } returns task
+    every { applicationPort.dispatch(task) } returns OutboxTaskResult.Failed("error")
     every { repository.fail(task, any(), any()) } just runs
 
-    val result = outbox.dispatchTask(partition) { OutboxTaskResult.Failed("error") }
+    val result = outbox.dispatchTask(partition)
 
     assertThat(result).isTrue()
   }
@@ -151,11 +159,11 @@ class ExecutionAdapterTests {
   fun `dispatchTask pauses partition reschedules task increments rateLimitedCounter and delegates pause`() {
     val task = task(attempts = 1)
     every { repository.claim(partition) } returns task
+    every { applicationPort.dispatch(task) } returns OutboxTaskResult.RateLimited(Duration.ofSeconds(30))
     every { repository.pausePartition(partition, "rate_limited", any()) } just runs
     every { repository.reschedule(task, any()) } just runs
 
-    val retryAfter = Duration.ofSeconds(30)
-    val result = outbox.dispatchTask(partition) { OutboxTaskResult.RateLimited(retryAfter) }
+    val result = outbox.dispatchTask(partition)
 
     assertThat(result).isFalse()
     verify { repository.pausePartition(partition, "rate_limited", any()) }
@@ -170,13 +178,14 @@ class ExecutionAdapterTests {
   fun `rate limited task blocks all subsequent tasks in the partition`() {
     val task = task()
     every { repository.claim(partition) } returnsMany listOf(task, null)
+    every { applicationPort.dispatch(task) } returns OutboxTaskResult.RateLimited(Duration.ofSeconds(30))
     every { repository.pausePartition(partition, "rate_limited", any()) } just runs
     every { repository.reschedule(task, any()) } just runs
 
-    val firstResult = outbox.dispatchTask(partition) { OutboxTaskResult.RateLimited(Duration.ofSeconds(30)) }
+    val firstResult = outbox.dispatchTask(partition)
     assertThat(firstResult).isFalse()
 
-    val secondResult = outbox.dispatchTask(partition) { OutboxTaskResult.Success }
+    val secondResult = outbox.dispatchTask(partition)
     assertThat(secondResult).isFalse()
 
     verify(exactly = 1) { repository.pausePartition(partition, "rate_limited", any()) }
@@ -186,11 +195,11 @@ class ExecutionAdapterTests {
   fun `dispatchTask with pauseOnRateLimit=false reschedules without pausing and does not delegate pause`() {
     val task = task(attempts = 1)
     every { repository.claim(noPausePartition) } returns task
+    every { applicationPort.dispatch(task) } returns OutboxTaskResult.RateLimited(Duration.ofSeconds(30))
     val capturedNextRetryAt = mutableListOf<Instant>()
     every { repository.reschedule(task, capture(capturedNextRetryAt)) } just runs
 
-    val retryAfter = Duration.ofSeconds(30)
-    val result = outbox.dispatchTask(noPausePartition) { OutboxTaskResult.RateLimited(retryAfter) }
+    val result = outbox.dispatchTask(noPausePartition)
 
     assertThat(result).isFalse()
     verify(exactly = 0) { repository.pausePartition(any(), any(), any()) }

@@ -1,7 +1,7 @@
 package de.chrgroth.quarkus.outbox.domain.startup
 
 import de.chrgroth.quarkus.outbox.domain.ApplicationPort
-import de.chrgroth.quarkus.outbox.domain.CoroutinesAdapter
+import de.chrgroth.quarkus.outbox.adapter.out.executor.CoroutinesAdapter
 import de.chrgroth.quarkus.outbox.domain.ExecutionAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionInfo

@@ -18,6 +18,7 @@ class ExecutionAdapter(
   private val repository: OutboxRepository,
   private val meterRegistry: MeterRegistry,
   private val partitionAdapter: PartitionAdapter,
+  private val applicationPort: ApplicationPort,
 ) : ExecutionPort {
 
   private val retryPolicy = RetryPolicy()
@@ -25,10 +26,10 @@ class ExecutionAdapter(
   private val failedCounters = ConcurrentHashMap<String, Counter>()
   private val rateLimitedCounters = ConcurrentHashMap<String, Counter>()
 
-  fun dispatchTask(partition: OutboxPartition, dispatch: (OutboxTask) -> OutboxTaskResult): Boolean {
+  fun dispatchTask(partition: OutboxPartition): Boolean {
     val task = repository.claim(partition) ?: return false
 
-    return when (val result = dispatch(task)) {
+    return when (val result = applicationPort.dispatch(task)) {
       is OutboxTaskResult.Success -> {
         repository.complete(task)
         processedCounters.getOrPut(partition.key) {

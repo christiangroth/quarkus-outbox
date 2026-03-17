@@ -18,4 +18,5 @@ rootProject.name = "quarkus-outbox"
 
 include("domain-api")
 include("domain-impl")
+include("adapter-out-executor")
 include("adapter-out-persistence-mongodb")

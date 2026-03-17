@@ -1,5 +1,6 @@
-package de.chrgroth.quarkus.outbox.domain
+package de.chrgroth.quarkus.outbox.adapter.out.executor
 
+import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking

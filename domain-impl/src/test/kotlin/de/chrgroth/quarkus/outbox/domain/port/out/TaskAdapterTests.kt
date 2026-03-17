@@ -1,6 +1,6 @@
 package de.chrgroth.quarkus.outbox.domain.port.out
 
-import de.chrgroth.quarkus.outbox.domain.CoroutinesAdapter
+import de.chrgroth.quarkus.outbox.adapter.out.executor.CoroutinesAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxEvent
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxTaskPriority

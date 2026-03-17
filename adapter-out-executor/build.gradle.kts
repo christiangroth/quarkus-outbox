@@ -7,10 +7,6 @@ dependencies {
   api(project(":domain-api"))
 
   implementation(platform(libs.quarkusBom))
-  implementation("io.quarkus:quarkus-micrometer")
-  implementation("io.quarkus:quarkus-scheduler")
-
-  testImplementation(project(":adapter-out-executor"))
 }
 
 allOpen {
