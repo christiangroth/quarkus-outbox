@@ -1,6 +1,7 @@
 package de.chrgroth.quarkus.outbox.domain
 
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.assertj.core.api.Assertions.assertThat
@@ -40,23 +41,32 @@ class CoroutinesAdapterTests {
   fun `wakeUp and waitOnSignal communicate for same partition`() = runBlocking {
     adapter.wakeUp(partitionA)
 
+    var signalReceived = false
     withTimeout(1000) {
       adapter.waitOnSignal(partitionA)
+      signalReceived = true
     }
+
+    assertThat(signalReceived).isTrue()
   }
 
   @Test
   fun `wakeUp for one partition does not signal another partition`() = runBlocking {
     adapter.wakeUp(partitionA)
 
-    // partitionB was not signalled – tryReceive via a direct send check
-    adapter.wakeUp(partitionB)
-    withTimeout(1000) {
-      adapter.waitOnSignal(partitionB)
+    var partitionBSignalled = false
+    val job = launch {
+      try {
+        withTimeout(100) {
+          adapter.waitOnSignal(partitionB)
+          partitionBSignalled = true
+        }
+      } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+        // expected – partitionB was not signalled
+      }
     }
-    // partitionA signal is still available (channel is CONFLATED so it keeps last value)
-    withTimeout(1000) {
-      adapter.waitOnSignal(partitionA)
-    }
+    job.join()
+
+    assertThat(partitionBSignalled).isFalse()
   }
 }
