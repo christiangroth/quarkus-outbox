@@ -1,6 +1,6 @@
 package de.chrgroth.quarkus.outbox.domain
 
-import de.chrgroth.quarkus.outbox.adapter.out.executor.CoroutinesAdapter
+import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionAdapter
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
@@ -8,8 +8,10 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
-import io.mockk.spyk
 import io.mockk.verify
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
@@ -23,7 +25,11 @@ class ExecutionAdapterTests {
   private val partitionAdapter: PartitionAdapter = mockk(relaxed = true)
   private val applicationPort: ApplicationPort = mockk()
 
-  private val coroutinesAdapter = spyk(CoroutinesAdapter())
+  private val testScope = CoroutineScope(Dispatchers.IO)
+  private val coroutinesPort: CoroutinesPort = mockk {
+    every { scope() } returns testScope
+    every { wakeUp(any()) } just runs
+  }
 
   private val partition = object : OutboxPartition {
     override val key = "test-partition"
@@ -34,11 +40,11 @@ class ExecutionAdapterTests {
     override val pauseOnRateLimit = false
   }
 
-  private val outbox = ExecutionAdapter(coroutinesAdapter, repository, meterRegistry, partitionAdapter, applicationPort)
+  private val outbox = ExecutionAdapter(coroutinesPort, repository, meterRegistry, partitionAdapter, applicationPort)
 
   @AfterEach
   fun tearDown() {
-    coroutinesAdapter.onStop()
+    testScope.cancel()
   }
 
   private fun task(partitionKey: String = partition.key, attempts: Int = 0) = OutboxTask(

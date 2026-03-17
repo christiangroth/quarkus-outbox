@@ -1,20 +1,22 @@
 package de.chrgroth.quarkus.outbox.domain.startup
 
 import de.chrgroth.quarkus.outbox.domain.ApplicationPort
-import de.chrgroth.quarkus.outbox.adapter.out.executor.CoroutinesAdapter
 import de.chrgroth.quarkus.outbox.domain.ExecutionAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionInfo
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
+import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionAdapter
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
-import io.mockk.spyk
 import io.mockk.verify
 import io.quarkus.runtime.StartupEvent
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
@@ -22,13 +24,16 @@ import java.time.Instant
 
 class PartitionWorkerStarterTests {
 
-  private val coroutinesAdapter = spyk(CoroutinesAdapter())
+  private val testScope = CoroutineScope(Dispatchers.IO)
+  private val coroutinesPort: CoroutinesPort = mockk(relaxUnitFun = true) {
+    every { scope() } returns testScope
+  }
   private val repository: OutboxRepository = mockk()
   private val executionAdapter: ExecutionAdapter = mockk()
   private val partitionAdapter: PartitionAdapter = mockk()
   private val application: ApplicationPort = mockk()
 
-  private val recovery = PartitionWorkerStarter(coroutinesAdapter, repository, executionAdapter, partitionAdapter, application)
+  private val recovery = PartitionWorkerStarter(coroutinesPort, repository, executionAdapter, partitionAdapter, application)
 
   private val startupEvent = StartupEvent()
 
@@ -38,7 +43,7 @@ class PartitionWorkerStarterTests {
 
   @AfterEach
   fun tearDown() {
-    coroutinesAdapter.onStop()
+    testScope.cancel()
   }
 
   @Test
@@ -66,7 +71,7 @@ class PartitionWorkerStarterTests {
     recovery.onStart(startupEvent)
 
     verify { partitionAdapter.activatePartition(partition) }
-    verify { coroutinesAdapter.wakeUp(partition) }
+    verify { coroutinesPort.wakeUp(partition) }
   }
 
   @Test
@@ -83,7 +88,7 @@ class PartitionWorkerStarterTests {
     recovery.onStart(startupEvent)
 
     verify(exactly = 0) { partitionAdapter.activatePartition(any()) }
-    verify(exactly = 0) { coroutinesAdapter.wakeUp(any()) }
+    verify(exactly = 0) { coroutinesPort.wakeUp(any()) }
   }
 
   @Test
@@ -101,7 +106,7 @@ class PartitionWorkerStarterTests {
     recovery.onStart(startupEvent)
 
     verify { partitionAdapter.activatePartition(partition) }
-    verify { coroutinesAdapter.wakeUp(partition) }
+    verify { coroutinesPort.wakeUp(partition) }
   }
 
   @Test
@@ -118,7 +123,7 @@ class PartitionWorkerStarterTests {
     recovery.onStart(startupEvent)
 
     verify(exactly = 0) { partitionAdapter.activatePartition(any()) }
-    verify(exactly = 0) { coroutinesAdapter.wakeUp(any()) }
+    verify(exactly = 0) { coroutinesPort.wakeUp(any()) }
   }
 
   @Test
@@ -143,8 +148,8 @@ class PartitionWorkerStarterTests {
 
     verify { partitionAdapter.activatePartition(partitionA) }
     verify { partitionAdapter.activatePartition(partitionB) }
-    verify { coroutinesAdapter.wakeUp(partitionA) }
-    verify { coroutinesAdapter.wakeUp(partitionB) }
+    verify { coroutinesPort.wakeUp(partitionA) }
+    verify { coroutinesPort.wakeUp(partitionB) }
   }
 
   @Test
@@ -165,5 +170,3 @@ class PartitionWorkerStarterTests {
     assertThat(activationOrder).containsExactly("reset", "activate")
   }
 }
-
-

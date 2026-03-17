@@ -1,30 +1,26 @@
 package de.chrgroth.quarkus.outbox.domain.port.out
 
-import de.chrgroth.quarkus.outbox.adapter.out.executor.CoroutinesAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxEvent
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxTaskPriority
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import io.mockk.every
+import io.mockk.just
 import io.mockk.mockk
-import io.mockk.spyk
+import io.mockk.runs
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
-import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 
 class TaskAdapterTests {
 
   private val repository: OutboxRepository = mockk()
   private val meterRegistry = SimpleMeterRegistry()
-  private val coroutinesAdapter = spyk(CoroutinesAdapter())
-
-  private val adapter = TaskAdapter(repository, coroutinesAdapter, meterRegistry)
-
-  @AfterEach
-  fun tearDown() {
-    coroutinesAdapter.onStop()
+  private val coroutinesPort: CoroutinesPort = mockk {
+    every { wakeUp(any()) } just runs
   }
+
+  private val adapter = TaskAdapter(repository, coroutinesPort, meterRegistry)
 
   private val partition = object : OutboxPartition {
     override val key = "test-partition"
@@ -42,7 +38,7 @@ class TaskAdapterTests {
     val result = adapter.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.NORMAL)
 
     assertThat(result).isTrue()
-    verify { coroutinesAdapter.wakeUp(partition) }
+    verify { coroutinesPort.wakeUp(partition) }
     assertThat(meterRegistry.counter("outbox_tasks_enqueued_total", "partition", partition.key).count()).isEqualTo(1.0)
   }
 
@@ -53,7 +49,7 @@ class TaskAdapterTests {
     val result = adapter.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.NORMAL)
 
     assertThat(result).isFalse()
-    verify(exactly = 0) { coroutinesAdapter.wakeUp(any()) }
+    verify(exactly = 0) { coroutinesPort.wakeUp(any()) }
     assertThat(meterRegistry.find("outbox_tasks_enqueued_total").counter()).isNull()
   }
 
