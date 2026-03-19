@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test
 
 class PartitionAdapterTests {
 
-  private val repository: OutboxRepository = mockk()
+  private val partitionRepositoryPort: PartitionRepositoryPort = mockk()
   private val meterRegistry = SimpleMeterRegistry()
   private val partitionObserver: OutboxPartitionObserver = mockk(relaxed = true)
 
@@ -24,7 +24,7 @@ class PartitionAdapterTests {
     every { it.iterator() } answers { mutableListOf(partitionObserver).iterator() }
   }
 
-  private val adapter = PartitionAdapter(repository, meterRegistry, partitionObservers)
+  private val adapter = PartitionAdapter(partitionRepositoryPort, meterRegistry, partitionObservers)
 
   private val partition = object : OutboxPartition {
     override val key = "test-partition"
@@ -32,20 +32,20 @@ class PartitionAdapterTests {
 
   @Test
   fun `activatePartition calls repository activates gauge and notifies observers`() {
-    every { repository.activatePartition(partition) } just runs
-    every { repository.findPartition(partition) } returns null
+    every { partitionRepositoryPort.activate(partition) } just runs
+    every { partitionRepositoryPort.findPartition(partition.key) } returns null
 
     adapter.activatePartition(partition)
 
-    verify { repository.activatePartition(partition) }
+    verify { partitionRepositoryPort.activate(partition) }
     verify { partitionObserver.onPartitionActivated(partition) }
     assertThat(meterRegistry.find("outbox_partition_status").tag("partition", partition.key).gauge()?.value()).isEqualTo(1.0)
   }
 
   @Test
   fun `activatePartition initialises gauge from persisted status when already paused`() {
-    every { repository.activatePartition(partition) } just runs
-    every { repository.findPartition(partition) } returns OutboxPartitionInfo(
+    every { partitionRepositoryPort.activate(partition) } just runs
+    every { partitionRepositoryPort.findPartition(partition.key) } returns OutboxPartitionInfo(
       key = partition.key,
       status = OutboxPartitionStatus.PAUSED.name,
       statusReason = "rate_limited",
@@ -59,7 +59,7 @@ class PartitionAdapterTests {
 
   @Test
   fun `pausePartition sets gauge to zero and notifies observers`() {
-    every { repository.findPartition(partition) } returns null
+    every { partitionRepositoryPort.findPartition(partition.key) } returns null
 
     adapter.pausePartition(partition)
 

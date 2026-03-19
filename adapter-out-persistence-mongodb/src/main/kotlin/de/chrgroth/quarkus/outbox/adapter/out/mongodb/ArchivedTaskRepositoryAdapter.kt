@@ -2,7 +2,7 @@ package de.chrgroth.quarkus.outbox.adapter.out.mongodb
 
 import com.mongodb.client.model.Filters
 import com.mongodb.client.model.ReplaceOptions
-import de.chrgroth.quarkus.outbox.adapter.out.mongodb.documents.ArchivedTask
+import de.chrgroth.quarkus.outbox.adapter.out.mongodb.ArchivedTask
 import de.chrgroth.quarkus.outbox.domain.OutboxTask
 import de.chrgroth.quarkus.outbox.domain.OutboxTaskStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort

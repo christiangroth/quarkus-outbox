@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 @ApplicationScoped
 class TaskAdapter(
-  private val repository: OutboxRepository,
+  private val taskRepositoryPort: TaskRepositoryPort,
   private val coroutinesPort: CoroutinesPort,
   private val meterRegistry: MeterRegistry,
 ) : TaskPort {
@@ -24,7 +24,7 @@ class TaskAdapter(
     payload: String,
     priority: OutboxTaskPriority,
   ): Boolean {
-    val inserted = repository.enqueue(partition, event, payload, priority)
+    val inserted = taskRepositoryPort.enqueue(partition, event, payload, priority)
     if (inserted) {
       coroutinesPort.signal(partition)
       enqueuedCounters.getOrPut(partition.key) {

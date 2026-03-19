@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 @ApplicationScoped
 class PartitionAdapter(
-  private val repository: OutboxRepository,
+  private val partitionRepositoryPort: PartitionRepositoryPort,
   private val meterRegistry: MeterRegistry,
   @param:Any private val partitionObservers: Instance<OutboxPartitionObserver>,
 ) : PartitionPort {
@@ -21,7 +21,7 @@ class PartitionAdapter(
   private val partitionStatusGauges = ConcurrentHashMap<String, AtomicInteger>()
 
   override fun activatePartition(partition: OutboxPartition) {
-    repository.activatePartition(partition)
+    partitionRepositoryPort.activate(partition)
     getOrCreatePartitionStatusGauge(partition).set(1)
     partitionObservers.forEach { it.onPartitionActivated(partition) }
   }
@@ -33,7 +33,7 @@ class PartitionAdapter(
 
   private fun getOrCreatePartitionStatusGauge(partition: OutboxPartition): AtomicInteger =
     partitionStatusGauges.getOrPut(partition.key) {
-      val initialStatus = repository.findPartition(partition)
+      val initialStatus = partitionRepositoryPort.findPartition(partition.key)
         ?.let { if (it.status == OutboxPartitionStatus.ACTIVE.name) 1 else 0 } ?: 1
       AtomicInteger(initialStatus).also { gauge ->
         Gauge.builder("outbox_partition_status", gauge) { it.get().toDouble() }

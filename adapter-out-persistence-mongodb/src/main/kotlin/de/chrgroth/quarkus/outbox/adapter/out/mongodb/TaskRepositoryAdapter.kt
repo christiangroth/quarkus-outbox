@@ -5,7 +5,7 @@ import com.mongodb.client.model.FindOneAndUpdateOptions
 import com.mongodb.client.model.ReturnDocument
 import com.mongodb.client.model.Sorts
 import com.mongodb.client.model.Updates
-import de.chrgroth.quarkus.outbox.adapter.out.mongodb.documents.Task
+import de.chrgroth.quarkus.outbox.adapter.out.mongodb.Task
 import de.chrgroth.quarkus.outbox.domain.OutboxEvent
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxTask

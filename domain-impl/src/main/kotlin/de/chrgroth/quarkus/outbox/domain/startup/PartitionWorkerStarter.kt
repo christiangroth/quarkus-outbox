@@ -1,12 +1,12 @@
 package de.chrgroth.quarkus.outbox.domain.startup
 
 import de.chrgroth.quarkus.outbox.domain.ApplicationPort
-import de.chrgroth.quarkus.outbox.domain.ArchiveAdapter
+import de.chrgroth.quarkus.outbox.domain.OutboxControllerAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
-import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionAdapter
+import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
 import io.quarkus.runtime.StartupEvent
 import jakarta.annotation.Priority
 import jakarta.enterprise.context.ApplicationScoped
@@ -21,8 +21,8 @@ import java.time.Instant
 @Suppress("Unused", "UnusedParameter", "SwallowedException")
 class PartitionWorkerStarter(
   private val coroutinesPort: CoroutinesPort,
-  private val repository: OutboxRepository,
-  private val executionAdapter: ArchiveAdapter,
+  private val partitionPort: PartitionRepositoryPort,
+  private val executionAdapter: OutboxControllerAdapter,
   private val partitionAdapter: PartitionAdapter,
   private val application: ApplicationPort,
 ) {
@@ -40,7 +40,7 @@ class PartitionWorkerStarter(
   }
 
   private fun startup(partition: OutboxPartition) {
-    val partitionInfo = repository.findOrCreatePartition(partition)
+    val partitionInfo = partitionPort.findOrCreate(partition)
     if (partitionInfo.status != OutboxPartitionStatus.PAUSED.name) {
       recoverActive(partition)
       return

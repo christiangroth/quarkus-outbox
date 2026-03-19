@@ -14,13 +14,13 @@ import org.junit.jupiter.api.Test
 
 class TaskAdapterTests {
 
-  private val repository: OutboxRepository = mockk()
+  private val taskRepositoryPort: TaskRepositoryPort = mockk()
   private val meterRegistry = SimpleMeterRegistry()
   private val coroutinesPort: CoroutinesPort = mockk {
     every { signal(any()) } just runs
   }
 
-  private val adapter = TaskAdapter(repository, coroutinesPort, meterRegistry)
+  private val adapter = TaskAdapter(taskRepositoryPort, coroutinesPort, meterRegistry)
 
   private val partition = object : OutboxPartition {
     override val key = "test-partition"
@@ -33,7 +33,7 @@ class TaskAdapterTests {
 
   @Test
   fun `enqueue signals partition and increments counter when task is inserted`() {
-    every { repository.enqueue(partition, any(), any(), any()) } returns true
+    every { taskRepositoryPort.enqueue(partition, any(), any(), any()) } returns true
 
     val result = adapter.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.NORMAL)
 
@@ -44,7 +44,7 @@ class TaskAdapterTests {
 
   @Test
   fun `enqueue does not signal or increment counter when task is rejected due to deduplication`() {
-    every { repository.enqueue(partition, any(), any(), any()) } returns false
+    every { taskRepositoryPort.enqueue(partition, any(), any(), any()) } returns false
 
     val result = adapter.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.NORMAL)
 
@@ -55,10 +55,10 @@ class TaskAdapterTests {
 
   @Test
   fun `enqueue passes priority to repository`() {
-    every { repository.enqueue(partition, any(), any(), OutboxTaskPriority.HIGH) } returns true
+    every { taskRepositoryPort.enqueue(partition, any(), any(), OutboxTaskPriority.HIGH) } returns true
 
     adapter.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.HIGH)
 
-    verify { repository.enqueue(partition, any(), any(), OutboxTaskPriority.HIGH) }
+    verify { taskRepositoryPort.enqueue(partition, any(), any(), OutboxTaskPriority.HIGH) }
   }
 }

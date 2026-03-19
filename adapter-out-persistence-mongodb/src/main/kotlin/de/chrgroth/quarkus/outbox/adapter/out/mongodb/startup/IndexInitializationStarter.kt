@@ -18,7 +18,7 @@ private data class OutboxIndex(
 
 @ApplicationScoped
 @Suppress("Unused", "UnusedParameter")
-class IndexInitializer {
+class IndexInitializationStarter {
 
   @Inject
   lateinit var tasks: TaskRepositoryAdapter
