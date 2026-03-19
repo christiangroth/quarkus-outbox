@@ -17,19 +17,14 @@ class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort, PanacheMongoRe
   lateinit var metricsRecorder: MetricsRecorder
 
   override fun append(task: OutboxTask) {
-    val now = Instant.now()
-    val archiveDoc = buildArchivedTask(task, now).apply {
-      status = OutboxTaskStatus.DONE.name
-    }
+    val archiveDoc = buildArchivedTask(task, OutboxTaskStatus.DONE)
     metricsRecorder.timed("outbox.archive.append") {
       persist(archiveDoc)
     }
   }
 
   override fun appendFailed(task: OutboxTask, error: String) {
-    val now = Instant.now()
-    val archiveDoc = buildArchivedTask(task, now).apply {
-      status = OutboxTaskStatus.FAILED.name
+    val archiveDoc = buildArchivedTask(task, OutboxTaskStatus.FAILED).apply {
       attempts = task.attempts + 1
       nextRetryAt = null
       lastError = error
@@ -40,9 +35,7 @@ class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort, PanacheMongoRe
   }
 
   override fun upsertFailed(task: OutboxTask) {
-    val now = Instant.now()
-    val archiveDoc = buildArchivedTask(task, now).apply {
-      status = OutboxTaskStatus.FAILED.name
+    val archiveDoc = buildArchivedTask(task, OutboxTaskStatus.FAILED).apply {
       nextRetryAt = null
     }
     metricsRecorder.timed("outbox.archive.upsertFailed") {
@@ -63,20 +56,23 @@ class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort, PanacheMongoRe
     return result.deletedCount
   }
 
-  private fun buildArchivedTask(task: OutboxTask, now: Instant): ArchivedTask = ArchivedTask().apply {
-    id = task.id
-    partition = task.partition
-    eventType = task.eventType
-    deduplicationKey = task.deduplicationKey
-    payload = task.payload
-    status = ""
-    attempts = task.attempts
-    createdAt = task.createdAt
-    updatedAt = now
-    nextRetryAt = task.nextRetryAt
-    priority = task.priority.name
-    lastError = task.lastError
-    completedAt = now
+  private fun buildArchivedTask(task: OutboxTask, status: OutboxTaskStatus): ArchivedTask {
+    val now = Instant.now()
+    return ArchivedTask().apply {
+      id = task.id
+      partition = task.partition
+      eventType = task.eventType
+      deduplicationKey = task.deduplicationKey
+      payload = task.payload
+      this.status = status.name
+      attempts = task.attempts
+      createdAt = task.createdAt
+      updatedAt = now
+      nextRetryAt = task.nextRetryAt
+      priority = task.priority.name
+      lastError = task.lastError
+      completedAt = now
+    }
   }
 }
 
