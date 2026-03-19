@@ -28,19 +28,19 @@ class CoroutinesAdapterTests {
 
   @Test
   fun `scope is active after construction`() {
-    assertThat(adapter.scope().isActive).isTrue()
+    assertThat(adapter.getScope().isActive).isTrue()
   }
 
   @Test
   fun `onStop cancels scope`() {
     adapter.onStop()
 
-    assertThat(adapter.scope().isActive).isFalse()
+    assertThat(adapter.getScope().isActive).isFalse()
   }
 
   @Test
   fun `wakeUp and waitOnSignal communicate for same partition`() = runBlocking {
-    adapter.wakeUp(partitionA)
+    adapter.signal(partitionA)
 
     var signalReceived = false
     withTimeout(1000) {
@@ -53,7 +53,7 @@ class CoroutinesAdapterTests {
 
   @Test
   fun `wakeUp for one partition does not signal another partition`() = runBlocking {
-    adapter.wakeUp(partitionA)
+    adapter.signal(partitionA)
 
     var partitionBSignalled = false
     val job = launch {

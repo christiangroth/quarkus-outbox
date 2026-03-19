@@ -27,8 +27,8 @@ class ExecutionAdapterTests {
 
   private val testScope = CoroutineScope(Dispatchers.IO)
   private val coroutinesPort: CoroutinesPort = mockk {
-    every { scope() } returns testScope
-    every { wakeUp(any()) } just runs
+    every { getScope() } returns testScope
+    every { signal(any()) } just runs
   }
 
   private val partition = object : OutboxPartition {
@@ -40,7 +40,7 @@ class ExecutionAdapterTests {
     override val pauseOnRateLimit = false
   }
 
-  private val outbox = ExecutionAdapter(coroutinesPort, repository, meterRegistry, partitionAdapter, applicationPort)
+  private val outbox = ArchiveAdapter(coroutinesPort, repository, meterRegistry, partitionAdapter, applicationPort)
 
   @AfterEach
   fun tearDown() {

@@ -1,7 +1,7 @@
 package de.chrgroth.quarkus.outbox.domain.startup
 
 import de.chrgroth.quarkus.outbox.domain.ApplicationPort
-import de.chrgroth.quarkus.outbox.domain.ExecutionAdapter
+import de.chrgroth.quarkus.outbox.domain.ArchiveAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionInfo
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
@@ -26,10 +26,10 @@ class PartitionWorkerStarterTests {
 
   private val testScope = CoroutineScope(Dispatchers.IO)
   private val coroutinesPort: CoroutinesPort = mockk(relaxUnitFun = true) {
-    every { scope() } returns testScope
+    every { getScope() } returns testScope
   }
   private val repository: OutboxRepository = mockk()
-  private val executionAdapter: ExecutionAdapter = mockk()
+  private val executionAdapter: ArchiveAdapter = mockk()
   private val partitionAdapter: PartitionAdapter = mockk()
   private val application: ApplicationPort = mockk()
 
@@ -71,7 +71,7 @@ class PartitionWorkerStarterTests {
     recovery.onStart(startupEvent)
 
     verify { partitionAdapter.activatePartition(partition) }
-    verify { coroutinesPort.wakeUp(partition) }
+    verify { coroutinesPort.signal(partition) }
   }
 
   @Test
@@ -88,7 +88,7 @@ class PartitionWorkerStarterTests {
     recovery.onStart(startupEvent)
 
     verify(exactly = 0) { partitionAdapter.activatePartition(any()) }
-    verify(exactly = 0) { coroutinesPort.wakeUp(any()) }
+    verify(exactly = 0) { coroutinesPort.signal(any()) }
   }
 
   @Test
@@ -106,7 +106,7 @@ class PartitionWorkerStarterTests {
     recovery.onStart(startupEvent)
 
     verify { partitionAdapter.activatePartition(partition) }
-    verify { coroutinesPort.wakeUp(partition) }
+    verify { coroutinesPort.signal(partition) }
   }
 
   @Test
@@ -123,7 +123,7 @@ class PartitionWorkerStarterTests {
     recovery.onStart(startupEvent)
 
     verify(exactly = 0) { partitionAdapter.activatePartition(any()) }
-    verify(exactly = 0) { coroutinesPort.wakeUp(any()) }
+    verify(exactly = 0) { coroutinesPort.signal(any()) }
   }
 
   @Test
@@ -148,8 +148,8 @@ class PartitionWorkerStarterTests {
 
     verify { partitionAdapter.activatePartition(partitionA) }
     verify { partitionAdapter.activatePartition(partitionB) }
-    verify { coroutinesPort.wakeUp(partitionA) }
-    verify { coroutinesPort.wakeUp(partitionB) }
+    verify { coroutinesPort.signal(partitionA) }
+    verify { coroutinesPort.signal(partitionB) }
   }
 
   @Test

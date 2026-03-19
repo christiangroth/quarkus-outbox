@@ -17,7 +17,7 @@ class TaskAdapterTests {
   private val repository: OutboxRepository = mockk()
   private val meterRegistry = SimpleMeterRegistry()
   private val coroutinesPort: CoroutinesPort = mockk {
-    every { wakeUp(any()) } just runs
+    every { signal(any()) } just runs
   }
 
   private val adapter = TaskAdapter(repository, coroutinesPort, meterRegistry)
@@ -38,7 +38,7 @@ class TaskAdapterTests {
     val result = adapter.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.NORMAL)
 
     assertThat(result).isTrue()
-    verify { coroutinesPort.wakeUp(partition) }
+    verify { coroutinesPort.signal(partition) }
     assertThat(meterRegistry.counter("outbox_tasks_enqueued_total", "partition", partition.key).count()).isEqualTo(1.0)
   }
 
@@ -49,7 +49,7 @@ class TaskAdapterTests {
     val result = adapter.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.NORMAL)
 
     assertThat(result).isFalse()
-    verify(exactly = 0) { coroutinesPort.wakeUp(any()) }
+    verify(exactly = 0) { coroutinesPort.signal(any()) }
     assertThat(meterRegistry.find("outbox_tasks_enqueued_total").counter()).isNull()
   }
 

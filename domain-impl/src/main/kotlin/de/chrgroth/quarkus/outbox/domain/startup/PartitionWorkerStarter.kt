@@ -1,7 +1,7 @@
 package de.chrgroth.quarkus.outbox.domain.startup
 
 import de.chrgroth.quarkus.outbox.domain.ApplicationPort
-import de.chrgroth.quarkus.outbox.domain.ExecutionAdapter
+import de.chrgroth.quarkus.outbox.domain.ArchiveAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
@@ -22,7 +22,7 @@ import java.time.Instant
 class PartitionWorkerStarter(
   private val coroutinesPort: CoroutinesPort,
   private val repository: OutboxRepository,
-  private val executionAdapter: ExecutionAdapter,
+  private val executionAdapter: ArchiveAdapter,
   private val partitionAdapter: PartitionAdapter,
   private val application: ApplicationPort,
 ) {
@@ -60,7 +60,7 @@ class PartitionWorkerStarter(
     }
 
     logger.info { "Partition ${partition.key} still paused until $pausedUntil, scheduling delayed activation" }
-    coroutinesPort.scope().launch {
+    coroutinesPort.getScope().launch {
       delay(pausedUntil.toEpochMilli() - now.toEpochMilli())
       logger.info { "Resuming partition ${partition.key} after delayed activation" }
       recoverActive(partition)
@@ -69,12 +69,12 @@ class PartitionWorkerStarter(
 
   private fun recoverActive(partition: OutboxPartition) {
     partitionAdapter.activatePartition(partition)
-    coroutinesPort.wakeUp(partition)
+    coroutinesPort.signal(partition)
   }
 
   private fun startPartitionWorker(partition: OutboxPartition) {
     logger.info { "Starting partition worker for ${partition.key}" }
-    coroutinesPort.scope().launch {
+    coroutinesPort.getScope().launch {
       val throttleInterval = partition.throttleInterval
       while (isActive) {
         coroutinesPort.waitOnSignal(partition)

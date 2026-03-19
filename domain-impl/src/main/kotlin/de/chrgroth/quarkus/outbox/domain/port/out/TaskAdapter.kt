@@ -26,7 +26,7 @@ class TaskAdapter(
   ): Boolean {
     val inserted = repository.enqueue(partition, event, payload, priority)
     if (inserted) {
-      coroutinesPort.wakeUp(partition)
+      coroutinesPort.signal(partition)
       enqueuedCounters.getOrPut(partition.key) {
         meterRegistry.counter("outbox_tasks_enqueued_total", "partition", partition.key)
       }.increment()

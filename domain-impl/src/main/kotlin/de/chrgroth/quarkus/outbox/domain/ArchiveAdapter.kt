@@ -1,6 +1,6 @@
 package de.chrgroth.quarkus.outbox.domain
 
-import de.chrgroth.quarkus.outbox.domain.port.`in`.ExecutionPort
+import de.chrgroth.quarkus.outbox.domain.port.`in`.ArchivePort
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepository
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionAdapter
@@ -13,13 +13,13 @@ import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
 @ApplicationScoped
-class ExecutionAdapter(
+class ArchiveAdapter(
   private val coroutinesPort: CoroutinesPort,
   private val repository: OutboxRepository,
   private val meterRegistry: MeterRegistry,
   private val partitionAdapter: PartitionAdapter,
   private val applicationPort: ApplicationPort,
-) : ExecutionPort {
+) : ArchivePort {
 
   private val retryPolicy = RetryPolicy()
   private val processedCounters = ConcurrentHashMap<String, Counter>()
@@ -51,12 +51,12 @@ class ExecutionAdapter(
         rateLimitedCounters.getOrPut(partition.key) {
           meterRegistry.counter("outbox_tasks_rate_limited_total", "partition", partition.key)
         }.increment()
-        coroutinesPort.scope().launch {
+        coroutinesPort.getScope().launch {
           delay(result.retryAfter.toMillis())
           if (partition.pauseOnRateLimit) {
             partitionAdapter.activatePartition(partition)
           }
-          coroutinesPort.wakeUp(partition)
+          coroutinesPort.signal(partition)
         }
         false
       }

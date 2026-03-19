@@ -17,9 +17,9 @@ class CoroutinesAdapter : CoroutinesPort {
   private val scope = CoroutineScope(Dispatchers.IO)
   private val channels: MutableMap<String, Channel<Unit>> = ConcurrentHashMap()
 
-  override fun scope() = scope
+  override fun getScope() = scope
 
-  override fun wakeUp(partition: OutboxPartition) {
+  override fun signal(partition: OutboxPartition) {
     channelFor(partition).trySend(Unit)
   }
 

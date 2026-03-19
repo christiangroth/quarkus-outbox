@@ -5,9 +5,9 @@ import kotlinx.coroutines.CoroutineScope
 
 interface CoroutinesPort {
 
-  fun scope(): CoroutineScope
+  fun getScope(): CoroutineScope
 
-  fun wakeUp(partition: OutboxPartition)
+  fun signal(partition: OutboxPartition)
 
   suspend fun waitOnSignal(partition: OutboxPartition)
 }
