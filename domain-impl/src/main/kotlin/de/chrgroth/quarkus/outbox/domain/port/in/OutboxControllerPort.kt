@@ -4,7 +4,7 @@ import de.chrgroth.quarkus.outbox.domain.OutboxEvent
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxTaskPriority
 
-interface TaskPort {
+interface OutboxControllerPort {
 
   fun enqueue(
     partition: OutboxPartition,
@@ -12,4 +12,6 @@ interface TaskPort {
     payload: String,
     priority: OutboxTaskPriority = OutboxTaskPriority.NORMAL,
   ): Boolean
+
+  fun activatePartition(partition: OutboxPartition)
 }

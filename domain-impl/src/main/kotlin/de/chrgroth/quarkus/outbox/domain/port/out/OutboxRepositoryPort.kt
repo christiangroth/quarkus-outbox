@@ -6,5 +6,4 @@ import java.time.Instant
 interface OutboxRepositoryPort {
   fun complete(task: OutboxTask)
   fun fail(task: OutboxTask, error: String, nextRetryAt: Instant?)
-  fun archiveFailedTasks(): Long
 }

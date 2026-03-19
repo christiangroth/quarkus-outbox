@@ -2,7 +2,7 @@ package de.chrgroth.quarkus.outbox.domain
 
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
-import de.chrgroth.quarkus.outbox.domain.port.out.PartitionAdapter
+import de.chrgroth.quarkus.outbox.domain.port.out.OutboxPartitionObserver
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.TaskRepositoryPort
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
@@ -11,6 +11,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
 import io.mockk.verify
+import jakarta.enterprise.inject.Instance
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -26,8 +27,13 @@ class OutboxControllerAdapterTests {
   private val archivePort: ArchivedTaskRepositoryPort = mockk()
   private val partitionPort: PartitionRepositoryPort = mockk()
   private val meterRegistry = SimpleMeterRegistry()
-  private val partitionAdapter: PartitionAdapter = mockk(relaxed = true)
   private val applicationPort: ApplicationPort = mockk()
+  private val partitionObserver: OutboxPartitionObserver = mockk(relaxed = true)
+
+  @Suppress("UNCHECKED_CAST")
+  private val partitionObservers: Instance<OutboxPartitionObserver> = mockk<Instance<OutboxPartitionObserver>>().also {
+    every { it.iterator() } answers { mutableListOf(partitionObserver).iterator() }
+  }
 
   private val testScope = CoroutineScope(Dispatchers.IO)
   private val coroutinesPort: CoroutinesPort = mockk {
@@ -36,7 +42,7 @@ class OutboxControllerAdapterTests {
   }
 
   private val adapter = OutboxControllerAdapter(
-    taskPort, archivePort, partitionPort, coroutinesPort, meterRegistry, partitionAdapter, applicationPort,
+    taskPort, archivePort, partitionPort, coroutinesPort, meterRegistry, applicationPort, partitionObservers,
   )
 
   private val partition = object : OutboxPartition {
@@ -67,6 +73,89 @@ class OutboxControllerAdapterTests {
     priority = OutboxTaskPriority.NORMAL,
     lastError = null,
   )
+
+  private fun testEvent() = object : OutboxEvent {
+    override val key = "TEST_EVENT"
+    override fun deduplicationKey() = "dedup-key"
+  }
+
+  // --- enqueue ---
+
+  @Test
+  fun `enqueue signals partition and increments counter when task is inserted`() {
+    every { taskPort.enqueue(partition, any(), any(), any()) } returns true
+
+    val result = adapter.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.NORMAL)
+
+    assertThat(result).isTrue()
+    verify { coroutinesPort.signal(partition) }
+    assertThat(meterRegistry.counter("outbox_tasks_enqueued_total", "partition", partition.key).count()).isEqualTo(1.0)
+  }
+
+  @Test
+  fun `enqueue does not signal or increment counter when task is rejected due to deduplication`() {
+    every { taskPort.enqueue(partition, any(), any(), any()) } returns false
+
+    val result = adapter.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.NORMAL)
+
+    assertThat(result).isFalse()
+    verify(exactly = 0) { coroutinesPort.signal(any()) }
+    assertThat(meterRegistry.find("outbox_tasks_enqueued_total").counter()).isNull()
+  }
+
+  @Test
+  fun `enqueue passes priority to repository`() {
+    every { taskPort.enqueue(partition, any(), any(), OutboxTaskPriority.HIGH) } returns true
+
+    adapter.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.HIGH)
+
+    verify { taskPort.enqueue(partition, any(), any(), OutboxTaskPriority.HIGH) }
+  }
+
+  // --- activatePartition ---
+
+  @Test
+  fun `activatePartition calls repository activates gauge and notifies observers`() {
+    every { partitionPort.activate(partition) } just runs
+    every { partitionPort.findPartition(partition.key) } returns null
+
+    adapter.activatePartition(partition)
+
+    verify { partitionPort.activate(partition) }
+    verify { partitionObserver.onPartitionActivated(partition) }
+    assertThat(meterRegistry.find("outbox_partition_status").tag("partition", partition.key).gauge()?.value()).isEqualTo(1.0)
+  }
+
+  @Test
+  fun `activatePartition initialises gauge from persisted status when already paused`() {
+    every { partitionPort.activate(partition) } just runs
+    every { partitionPort.findPartition(partition.key) } returns OutboxPartitionInfo(
+      key = partition.key,
+      status = OutboxPartitionStatus.PAUSED.name,
+      statusReason = "rate_limited",
+      pausedUntil = null,
+    )
+
+    adapter.activatePartition(partition)
+
+    assertThat(meterRegistry.find("outbox_partition_status").tag("partition", partition.key).gauge()?.value()).isEqualTo(1.0)
+  }
+
+  @Test
+  fun `dispatchTask pausing sets gauge to zero and notifies observers on rate limit`() {
+    val task = task()
+    every { partitionPort.findPartition(partition.key) } returns null
+    every { taskPort.claim(partition) } returns task
+    every { applicationPort.dispatch(task) } returns OutboxTaskResult.RateLimited(Duration.ofSeconds(30))
+    every { partitionPort.pause(partition, "rate_limited", any()) } just runs
+    every { taskPort.reschedule(task, any()) } just runs
+    every { partitionPort.activate(partition) } just runs
+
+    adapter.dispatchTask(partition)
+
+    verify { partitionObserver.onPartitionPaused(partition) }
+    assertThat(meterRegistry.find("outbox_partition_status").tag("partition", partition.key).gauge()?.value()).isEqualTo(0.0)
+  }
 
   // --- dispatchTask ---
 
@@ -181,18 +270,19 @@ class OutboxControllerAdapterTests {
   }
 
   @Test
-  fun `dispatchTask pauses partition reschedules task increments rateLimitedCounter and delegates pause`() {
+  fun `dispatchTask pauses partition reschedules task increments rateLimitedCounter and notifies observers`() {
     val task = task()
     every { partitionPort.findPartition(partition.key) } returns null
     every { taskPort.claim(partition) } returns task
     every { applicationPort.dispatch(task) } returns OutboxTaskResult.RateLimited(Duration.ofSeconds(30))
     every { partitionPort.pause(partition, "rate_limited", any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
+    every { partitionPort.activate(partition) } just runs
 
     assertThat(adapter.dispatchTask(partition)).isFalse()
     verify { partitionPort.pause(partition, "rate_limited", any()) }
     verify { taskPort.reschedule(task, any()) }
-    verify { partitionAdapter.pausePartition(partition) }
+    verify { partitionObserver.onPartitionPaused(partition) }
     verify(exactly = 0) { archivePort.append(any()) }
     verify(exactly = 0) { taskPort.scheduleRetry(any(), any(), any()) }
     assertThat(meterRegistry.counter("outbox_tasks_rate_limited_total", "partition", partition.key).count()).isEqualTo(1.0)
@@ -212,6 +302,7 @@ class OutboxControllerAdapterTests {
     every { applicationPort.dispatch(task) } returns OutboxTaskResult.RateLimited(Duration.ofSeconds(30))
     every { partitionPort.pause(partition, "rate_limited", any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
+    every { partitionPort.activate(partition) } just runs
 
     assertThat(adapter.dispatchTask(partition)).isFalse()
     assertThat(adapter.dispatchTask(partition)).isFalse()
@@ -230,7 +321,6 @@ class OutboxControllerAdapterTests {
 
     assertThat(adapter.dispatchTask(noPausePartition)).isFalse()
     verify(exactly = 0) { partitionPort.pause(any(), any(), any()) }
-    verify(exactly = 0) { partitionAdapter.pausePartition(any()) }
     verify { taskPort.reschedule(task, any()) }
     assertThat(capturedNextRetryAt.first()).isAfter(Instant.now().plusSeconds(28))
     assertThat(meterRegistry.counter("outbox_tasks_rate_limited_total", "partition", noPausePartition.key).count()).isEqualTo(1.0)
@@ -286,30 +376,5 @@ class OutboxControllerAdapterTests {
 
     verify { taskPort.scheduleRetry(task, "error", nextRetryAt) }
     verify(exactly = 0) { archivePort.appendFailed(any(), any()) }
-  }
-
-  // --- archiveFailedTasks ---
-
-  @Test
-  fun `archiveFailedTasks returns 0 when no failed tasks`() {
-    every { taskPort.listFailed() } returns emptyList()
-
-    assertThat(adapter.archiveFailedTasks()).isEqualTo(0L)
-    verify(exactly = 0) { archivePort.upsertFailed(any()) }
-  }
-
-  @Test
-  fun `archiveFailedTasks upserts and deletes each failed task`() {
-    val task1 = task().copy(id = "task-1")
-    val task2 = task().copy(id = "task-2")
-    every { taskPort.listFailed() } returns listOf(task1, task2)
-    every { archivePort.upsertFailed(any()) } just runs
-    every { taskPort.delete(any()) } just runs
-
-    assertThat(adapter.archiveFailedTasks()).isEqualTo(2L)
-    verify { archivePort.upsertFailed(task1) }
-    verify { archivePort.upsertFailed(task2) }
-    verify { taskPort.delete(task1) }
-    verify { taskPort.delete(task2) }
   }
 }

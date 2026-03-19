@@ -1,6 +1,6 @@
-package de.chrgroth.quarkus.outbox.domain.schedule
+package de.chrgroth.quarkus.outbox.adapter.`in`.scheduler
 
-import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
+import de.chrgroth.quarkus.outbox.domain.port.`in`.ArchiverPort
 import io.quarkus.scheduler.Scheduled
 import jakarta.enterprise.context.ApplicationScoped
 import mu.KLogging
@@ -10,8 +10,8 @@ import java.time.temporal.ChronoUnit
 
 @ApplicationScoped
 @Suppress("Unused")
-class OutboxArchiveCleanupJob(
-  private val archivePort: ArchivedTaskRepositoryPort,
+class ArchiverJob(
+  private val archiverPort: ArchiverPort,
   @param:ConfigProperty(name = "app.outbox.archive-retention-days")
   private val retentionDays: Long,
 ) {
@@ -19,8 +19,9 @@ class OutboxArchiveCleanupJob(
   @Scheduled(cron = "0 0 1 * * ?")
   fun run() {
     logger.info { "Running outbox archive cleanup (retention: $retentionDays days)" }
+    archiverPort.archiveFailedTasks()
     val cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS)
-    archivePort.deleteEntriesOlderThan(cutoff).also { deletionCount ->
+    archiverPort.deleteEntriesOlderThan(cutoff).also { deletionCount ->
       logger.info { "Outbox archive cleanup deleted $deletionCount entries older than $cutoff" }
     }
   }

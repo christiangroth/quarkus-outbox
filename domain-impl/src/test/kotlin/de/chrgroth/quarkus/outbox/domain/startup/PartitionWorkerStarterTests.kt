@@ -6,7 +6,6 @@ import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionInfo
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
-import de.chrgroth.quarkus.outbox.domain.port.out.PartitionAdapter
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
 import io.mockk.every
 import io.mockk.just
@@ -30,10 +29,9 @@ class PartitionWorkerStarterTests {
   }
   private val partitionPort: PartitionRepositoryPort = mockk()
   private val executionAdapter: OutboxControllerAdapter = mockk()
-  private val partitionAdapter: PartitionAdapter = mockk()
   private val application: ApplicationPort = mockk()
 
-  private val recovery = PartitionWorkerStarter(coroutinesPort, partitionPort, executionAdapter, partitionAdapter, application)
+  private val recovery = PartitionWorkerStarter(coroutinesPort, partitionPort, executionAdapter, application)
 
   private val startupEvent = StartupEvent()
 
@@ -66,11 +64,11 @@ class PartitionWorkerStarterTests {
       statusReason = null,
       pausedUntil = null,
     )
-    every { partitionAdapter.activatePartition(partition) } just runs
+    every { executionAdapter.activatePartition(partition) } just runs
 
     recovery.onStart(startupEvent)
 
-    verify { partitionAdapter.activatePartition(partition) }
+    verify { executionAdapter.activatePartition(partition) }
     verify { coroutinesPort.signal(partition) }
   }
 
@@ -87,7 +85,7 @@ class PartitionWorkerStarterTests {
 
     recovery.onStart(startupEvent)
 
-    verify(exactly = 0) { partitionAdapter.activatePartition(any()) }
+    verify(exactly = 0) { executionAdapter.activatePartition(any()) }
     verify(exactly = 0) { coroutinesPort.signal(any()) }
   }
 
@@ -101,11 +99,11 @@ class PartitionWorkerStarterTests {
       statusReason = "rate_limited",
       pausedUntil = Instant.now().minusSeconds(60),
     )
-    every { partitionAdapter.activatePartition(partition) } just runs
+    every { executionAdapter.activatePartition(partition) } just runs
 
     recovery.onStart(startupEvent)
 
-    verify { partitionAdapter.activatePartition(partition) }
+    verify { executionAdapter.activatePartition(partition) }
     verify { coroutinesPort.signal(partition) }
   }
 
@@ -122,7 +120,7 @@ class PartitionWorkerStarterTests {
 
     recovery.onStart(startupEvent)
 
-    verify(exactly = 0) { partitionAdapter.activatePartition(any()) }
+    verify(exactly = 0) { executionAdapter.activatePartition(any()) }
     verify(exactly = 0) { coroutinesPort.signal(any()) }
   }
 
@@ -142,12 +140,12 @@ class PartitionWorkerStarterTests {
       statusReason = null,
       pausedUntil = null,
     )
-    every { partitionAdapter.activatePartition(any()) } just runs
+    every { executionAdapter.activatePartition(any()) } just runs
 
     recovery.onStart(startupEvent)
 
-    verify { partitionAdapter.activatePartition(partitionA) }
-    verify { partitionAdapter.activatePartition(partitionB) }
+    verify { executionAdapter.activatePartition(partitionA) }
+    verify { executionAdapter.activatePartition(partitionB) }
     verify { coroutinesPort.signal(partitionA) }
     verify { coroutinesPort.signal(partitionB) }
   }
@@ -163,7 +161,7 @@ class PartitionWorkerStarterTests {
       statusReason = null,
       pausedUntil = null,
     )
-    every { partitionAdapter.activatePartition(partition) } answers { activationOrder.add("activate") }
+    every { executionAdapter.activatePartition(partition) } answers { activationOrder.add("activate") }
 
     recovery.onStart(startupEvent)
 

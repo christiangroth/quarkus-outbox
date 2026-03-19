@@ -1,19 +1,24 @@
 package de.chrgroth.quarkus.outbox.domain
 
+import de.chrgroth.quarkus.outbox.domain.port.`in`.OutboxControllerPort
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
-import de.chrgroth.quarkus.outbox.domain.port.out.PartitionAdapter
-import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
+import de.chrgroth.quarkus.outbox.domain.port.out.OutboxPartitionObserver
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepositoryPort
+import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.TaskRepositoryPort
 import io.micrometer.core.instrument.Counter
+import io.micrometer.core.instrument.Gauge
 import io.micrometer.core.instrument.MeterRegistry
 import jakarta.enterprise.context.ApplicationScoped
+import jakarta.enterprise.inject.Any
+import jakarta.enterprise.inject.Instance
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import mu.KLogging
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 @ApplicationScoped
 class OutboxControllerAdapter(
@@ -22,14 +27,61 @@ class OutboxControllerAdapter(
   private val partitionPort: PartitionRepositoryPort,
   private val coroutinesPort: CoroutinesPort,
   private val meterRegistry: MeterRegistry,
-  private val partitionAdapter: PartitionAdapter,
   private val applicationPort: ApplicationPort,
-) : OutboxRepositoryPort {
+  @param:Any private val partitionObservers: Instance<OutboxPartitionObserver>,
+) : OutboxControllerPort, OutboxRepositoryPort {
 
   private val retryPolicy = RetryPolicy()
+  private val enqueuedCounters = ConcurrentHashMap<String, Counter>()
   private val processedCounters = ConcurrentHashMap<String, Counter>()
   private val failedCounters = ConcurrentHashMap<String, Counter>()
   private val rateLimitedCounters = ConcurrentHashMap<String, Counter>()
+  private val partitionStatusGauges = ConcurrentHashMap<String, AtomicInteger>()
+
+  // --- OutboxControllerPort: enqueue ---
+
+  override fun enqueue(
+    partition: OutboxPartition,
+    event: OutboxEvent,
+    payload: String,
+    priority: OutboxTaskPriority,
+  ): Boolean {
+    val inserted = taskPort.enqueue(partition, event, payload, priority)
+    if (inserted) {
+      coroutinesPort.signal(partition)
+      enqueuedCounters.getOrPut(partition.key) {
+        meterRegistry.counter("outbox_tasks_enqueued_total", "partition", partition.key)
+      }.increment()
+    }
+    return inserted
+  }
+
+  // --- OutboxControllerPort: activatePartition ---
+
+  override fun activatePartition(partition: OutboxPartition) {
+    partitionPort.activate(partition)
+    getOrCreatePartitionStatusGauge(partition).set(1)
+    partitionObservers.forEach { it.onPartitionActivated(partition) }
+  }
+
+  private fun pausePartition(partition: OutboxPartition) {
+    getOrCreatePartitionStatusGauge(partition).set(0)
+    partitionObservers.forEach { it.onPartitionPaused(partition) }
+  }
+
+  private fun getOrCreatePartitionStatusGauge(partition: OutboxPartition): AtomicInteger =
+    partitionStatusGauges.getOrPut(partition.key) {
+      val initialStatus = partitionPort.findPartition(partition.key)
+        ?.let { if (it.status == OutboxPartitionStatus.ACTIVE.name) 1 else 0 } ?: 1
+      AtomicInteger(initialStatus).also { gauge ->
+        Gauge.builder("outbox_partition_status", gauge) { it.get().toDouble() }
+          .tag("partition", partition.key)
+          .description("Outbox partition status: 1=active, 0=paused")
+          .register(meterRegistry)
+      }
+    }
+
+  // --- Dispatch ---
 
   fun resetStaleProcessingTasks() = taskPort.resetStaleProcessing()
 
@@ -54,7 +106,7 @@ class OutboxControllerAdapter(
           val pausedUntil = Instant.now().plus(result.retryAfter)
           partitionPort.pause(partition, "rate_limited", pausedUntil)
           taskPort.reschedule(task, pausedUntil)
-          partitionAdapter.pausePartition(partition)
+          pausePartition(partition)
         } else {
           val nextRetryAt = Instant.now().plus(result.retryAfter)
           taskPort.reschedule(task, nextRetryAt)
@@ -65,7 +117,7 @@ class OutboxControllerAdapter(
         coroutinesPort.getScope().launch {
           delay(result.retryAfter.toMillis())
           if (partition.pauseOnRateLimit) {
-            partitionAdapter.activatePartition(partition)
+            activatePartition(partition)
           }
           coroutinesPort.signal(partition)
         }
@@ -89,6 +141,8 @@ class OutboxControllerAdapter(
     }
   }
 
+  // --- OutboxRepositoryPort ---
+
   override fun complete(task: OutboxTask) {
     archivePort.append(task)
     taskPort.delete(task)
@@ -101,19 +155,6 @@ class OutboxControllerAdapter(
     } else {
       taskPort.scheduleRetry(task, error, nextRetryAt)
     }
-  }
-
-  override fun archiveFailedTasks(): Long {
-    val failedTasks = taskPort.listFailed()
-    if (failedTasks.isEmpty()) return 0L
-    var count = 0L
-    for (task in failedTasks) {
-      archivePort.upsertFailed(task)
-      taskPort.delete(task)
-      count++
-    }
-    logger.info { "Archived $count failed outbox tasks" }
-    return count
   }
 
   companion object : KLogging()

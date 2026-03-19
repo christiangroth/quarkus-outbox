@@ -5,7 +5,6 @@ import de.chrgroth.quarkus.outbox.domain.OutboxControllerAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
-import de.chrgroth.quarkus.outbox.domain.port.out.PartitionAdapter
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
 import io.quarkus.runtime.StartupEvent
 import jakarta.annotation.Priority
@@ -23,7 +22,6 @@ class PartitionWorkerStarter(
   private val coroutinesPort: CoroutinesPort,
   private val partitionPort: PartitionRepositoryPort,
   private val executionAdapter: OutboxControllerAdapter,
-  private val partitionAdapter: PartitionAdapter,
   private val application: ApplicationPort,
 ) {
 
@@ -68,7 +66,7 @@ class PartitionWorkerStarter(
   }
 
   private fun recoverActive(partition: OutboxPartition) {
-    partitionAdapter.activatePartition(partition)
+    executionAdapter.activatePartition(partition)
     coroutinesPort.signal(partition)
   }
 
