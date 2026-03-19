@@ -4,7 +4,5 @@ import java.time.Instant
 
 interface ArchiverPort {
 
-  fun archiveFailedTasks(): Long
-
-  fun deleteEntriesOlderThan(cutoff: Instant): Long
+  fun deleteOlderThan(cutoff: Instant): Long
 }

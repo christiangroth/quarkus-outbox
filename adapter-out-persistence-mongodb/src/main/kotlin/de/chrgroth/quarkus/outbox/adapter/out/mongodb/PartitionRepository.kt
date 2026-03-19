@@ -4,7 +4,6 @@ import com.mongodb.client.model.Filters
 import com.mongodb.client.model.FindOneAndUpdateOptions
 import com.mongodb.client.model.ReturnDocument
 import com.mongodb.client.model.Updates
-import de.chrgroth.quarkus.outbox.adapter.out.mongodb.Partition
 import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionInfo
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
@@ -19,11 +18,6 @@ class PartitionRepository : PartitionRepositoryPort, PanacheMongoRepositoryBase<
 
   @Inject
   lateinit var metricsRecorder: MetricsRecorder
-
-  override fun findPartition(partitionKey: String): OutboxPartitionInfo? =
-    metricsRecorder.timed("outbox.partition.find") {
-      findById(partitionKey)?.toInfo()
-    }
 
   override fun findOrCreate(partition: ApplicationOutboxPartition): OutboxPartitionInfo {
     val doc = metricsRecorder.timed("outbox.partition.findOrCreate") {
@@ -45,13 +39,13 @@ class PartitionRepository : PartitionRepositoryPort, PanacheMongoRepositoryBase<
           Updates.set("statusReason", reason),
           Updates.set("pausedUntil", pausedUntil),
         ),
-        FindOneAndUpdateOptions().upsert(true),
+        FindOneAndUpdateOptions().upsert(true).returnDocument(ReturnDocument.AFTER),
       )
     }
   }
 
-  override fun activate(partition: ApplicationOutboxPartition) {
-    metricsRecorder.timed("outbox.partition.activate") {
+  override fun resume(partition: ApplicationOutboxPartition) {
+    metricsRecorder.timed("outbox.partition.resume") {
       mongoCollection().findOneAndUpdate(
         Filters.eq("_id", partition.key),
         Updates.combine(
@@ -59,7 +53,7 @@ class PartitionRepository : PartitionRepositoryPort, PanacheMongoRepositoryBase<
           Updates.unset("statusReason"),
           Updates.unset("pausedUntil"),
         ),
-        FindOneAndUpdateOptions().upsert(true),
+        FindOneAndUpdateOptions().upsert(true).returnDocument(ReturnDocument.AFTER),
       )
     }
   }

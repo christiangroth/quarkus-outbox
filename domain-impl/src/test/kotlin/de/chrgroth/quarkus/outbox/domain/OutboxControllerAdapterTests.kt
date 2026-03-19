@@ -115,19 +115,19 @@ class OutboxControllerAdapterTests {
 
   @Test
   fun `activatePartition calls repository activates gauge and notifies observers`() {
-    every { partitionPort.activate(partition) } just runs
+    every { partitionPort.resume(partition) } just runs
     every { partitionPort.findPartition(partition.key) } returns null
 
     adapter.activatePartition(partition)
 
-    verify { partitionPort.activate(partition) }
+    verify { partitionPort.resume(partition) }
     verify { partitionObserver.onPartitionActivated(partition) }
     assertThat(meterRegistry.find("outbox_partition_status").tag("partition", partition.key).gauge()?.value()).isEqualTo(1.0)
   }
 
   @Test
   fun `activatePartition initialises gauge from persisted status when already paused`() {
-    every { partitionPort.activate(partition) } just runs
+    every { partitionPort.resume(partition) } just runs
     every { partitionPort.findPartition(partition.key) } returns OutboxPartitionInfo(
       key = partition.key,
       status = OutboxPartitionStatus.PAUSED,
@@ -148,7 +148,7 @@ class OutboxControllerAdapterTests {
     every { applicationPort.dispatch(task) } returns OutboxTaskResult.RateLimited(Duration.ofSeconds(30))
     every { partitionPort.pause(partition, "rate_limited", any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
-    every { partitionPort.activate(partition) } just runs
+    every { partitionPort.resume(partition) } just runs
 
     adapter.dispatchTask(partition)
 
@@ -276,7 +276,7 @@ class OutboxControllerAdapterTests {
     every { applicationPort.dispatch(task) } returns OutboxTaskResult.RateLimited(Duration.ofSeconds(30))
     every { partitionPort.pause(partition, "rate_limited", any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
-    every { partitionPort.activate(partition) } just runs
+    every { partitionPort.resume(partition) } just runs
 
     assertThat(adapter.dispatchTask(partition)).isFalse()
     verify { partitionPort.pause(partition, "rate_limited", any()) }
@@ -301,7 +301,7 @@ class OutboxControllerAdapterTests {
     every { applicationPort.dispatch(task) } returns OutboxTaskResult.RateLimited(Duration.ofSeconds(30))
     every { partitionPort.pause(partition, "rate_limited", any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
-    every { partitionPort.activate(partition) } just runs
+    every { partitionPort.resume(partition) } just runs
 
     assertThat(adapter.dispatchTask(partition)).isFalse()
     assertThat(adapter.dispatchTask(partition)).isFalse()

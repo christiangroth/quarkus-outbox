@@ -56,7 +56,7 @@ class OutboxControllerAdapter(
   // --- OutboxControllerPort: activatePartition ---
 
   fun activatePartition(partition: ApplicationOutboxPartition) {
-    partitionPort.activate(partition)
+    partitionPort.resume(partition)
     getOrCreatePartitionStatusGauge(partition).set(1)
     partitionObservers.forEach { it.onPartitionActivated(partition) }
   }
@@ -68,8 +68,10 @@ class OutboxControllerAdapter(
 
   private fun getOrCreatePartitionStatusGauge(partition: ApplicationOutboxPartition): AtomicInteger =
     partitionStatusGauges.getOrPut(partition.key) {
-      val initialStatus = partitionPort.findPartition(partition.key)
-        ?.let { if (it.status == OutboxPartitionStatus.ACTIVE) 1 else 0 } ?: 1
+      val initialStatus = partitionPort.findOrCreate(partition).let {
+        if (it.status == OutboxPartitionStatus.ACTIVE) 1 else 0
+      }
+
       AtomicInteger(initialStatus).also { gauge ->
         Gauge.builder("outbox_partition_status", gauge) { it.get().toDouble() }
           .tag("partition", partition.key)
@@ -83,11 +85,13 @@ class OutboxControllerAdapter(
   fun resetStaleProcessingTasks() = taskPort.resetStaleProcessing()
 
   fun dispatchTask(partition: ApplicationOutboxPartition): Boolean {
-    val partitionInfo = partitionPort.findPartition(partition.key)
-    if (partitionInfo != null && partitionInfo.status == OutboxPartitionStatus.PAUSED) {
+    val partitionInfo = partitionPort.findOrCreate(partition)
+    if (partitionInfo.status == OutboxPartitionStatus.PAUSED) {
       return false
     }
-    val task = taskPort.claim(partition) ?: return false
+
+    val task = taskPort.claim(partition)
+      ?: return false
 
     return when (val result = applicationPort.dispatch(task)) {
       is OutboxTaskResult.Success -> {

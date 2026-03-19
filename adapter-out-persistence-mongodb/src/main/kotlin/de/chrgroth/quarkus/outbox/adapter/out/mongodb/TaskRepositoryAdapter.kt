@@ -5,7 +5,6 @@ import com.mongodb.client.model.FindOneAndUpdateOptions
 import com.mongodb.client.model.ReturnDocument
 import com.mongodb.client.model.Sorts
 import com.mongodb.client.model.Updates
-import de.chrgroth.quarkus.outbox.adapter.out.mongodb.Task
 import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxEvent
 import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxTask
@@ -27,7 +26,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
 
   override fun claim(partition: ApplicationOutboxPartition): OutboxTask? {
     val now = Instant.now()
-    val doc = metricsRecorder.timed("outbox.task.claim") {
+    return metricsRecorder.timed("outbox.task.claim") {
       mongoCollection().findOneAndUpdate(
         Filters.and(
           Filters.eq("partition", partition.key),
@@ -46,9 +45,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
           .sort(Sorts.orderBy(Sorts.ascending("priority"), Sorts.ascending("createdAt")))
           .returnDocument(ReturnDocument.AFTER),
       )
-    } ?: return null
-
-    return doc.toDomain()
+    }?.toDomain()
   }
 
   override fun delete(task: OutboxTask) {
@@ -57,6 +54,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
     }
   }
 
+  // TODO return type?
   override fun enqueue(
     partition: ApplicationOutboxPartition,
     event: ApplicationOutboxEvent,
@@ -73,32 +71,34 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
         ),
       ).first()
     }
+
     if (existing != null) {
       logger.debug { "Skipping duplicate outbox task: partition=${partition.key}, deduplicationKey=$deduplicationKey" }
       return false
     }
 
     val now = Instant.now()
-    val doc = Task().apply {
-      id = UUID.randomUUID().toString()
-      this.partition = partition.key
-      this.eventType = event.key
-      this.deduplicationKey = deduplicationKey
-      this.payload = payload
-      status = OutboxTaskStatus.PENDING.name
-      attempts = 0
-      createdAt = now
-      updatedAt = now
-      nextRetryAt = null
-      this.priority = priority.name
-      lastError = null
-    }
     metricsRecorder.timed("outbox.task.insert") {
-      persist(doc)
+      persist(Task().apply {
+        id = UUID.randomUUID().toString()
+        this.partition = partition.key
+        eventType = event.key
+        this.deduplicationKey = deduplicationKey
+        this.payload = payload
+        status = OutboxTaskStatus.PENDING.name
+        attempts = 0
+        createdAt = now
+        updatedAt = now
+        nextRetryAt = null
+        this.priority = priority.name
+        lastError = null
+      })
     }
+
     return true
   }
 
+  // TODO vs reschedule
   override fun scheduleRetry(task: OutboxTask, error: String, nextRetryAt: Instant) {
     val now = Instant.now()
     metricsRecorder.timed("outbox.task.scheduleRetry") {
@@ -146,25 +146,13 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
     }
   }
 
+  // TODO usage?
   override fun countByPartition(partition: ApplicationOutboxPartition): Long =
     metricsRecorder.timed("outbox.task.countByPartition") {
       count("partition = ?1", partition.key)
     }
 
-  override fun migratePartition(fromKey: String, toPartition: ApplicationOutboxPartition): Long {
-    val now = Instant.now()
-    val result = metricsRecorder.timed("outbox.task.migratePartition") {
-      mongoCollection().updateMany(
-        Filters.eq("partition", fromKey),
-        Updates.combine(
-          Updates.set("partition", toPartition.key),
-          Updates.set("updatedAt", now),
-        ),
-      )
-    }
-    return result.modifiedCount
-  }
-
+  // TODO usage?
   override fun listFailed(): List<OutboxTask> =
     metricsRecorder.timed("outbox.task.listFailed") {
       list("status = ?1", OutboxTaskStatus.FAILED.name)

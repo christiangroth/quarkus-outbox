@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 @ApplicationScoped
 class MetricsRecorder(
   private val meterRegistry: MeterRegistry,
-  @param:ConfigProperty(name = "outbox.mongodb.slow-query-threshold-ms")
+  @param:ConfigProperty(name = "app.outbox.mongodb.slow-query-threshold-ms")
   private val slowQueryThresholdMs: Long,
 ) {
 
