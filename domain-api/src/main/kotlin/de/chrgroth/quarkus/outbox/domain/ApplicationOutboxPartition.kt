@@ -2,7 +2,7 @@ package de.chrgroth.quarkus.outbox.domain
 
 import java.time.Duration
 
-interface OutboxPartition {
+interface ApplicationOutboxPartition {
   // TODO value class
   val key: String
 

@@ -1,6 +1,6 @@
 package de.chrgroth.quarkus.outbox.adapter.out.executor
 
-import de.chrgroth.quarkus.outbox.domain.OutboxPartition
+import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -13,11 +13,11 @@ class CoroutinesAdapterTests {
 
   private val adapter = CoroutinesAdapter()
 
-  private val partitionA = object : OutboxPartition {
+  private val partitionA = object : ApplicationOutboxPartition {
     override val key = "partition-a"
   }
 
-  private val partitionB = object : OutboxPartition {
+  private val partitionB = object : ApplicationOutboxPartition {
     override val key = "partition-b"
   }
 

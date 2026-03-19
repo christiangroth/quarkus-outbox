@@ -1,6 +1,6 @@
 package de.chrgroth.quarkus.outbox.domain
 
-interface OutboxEvent {
+interface ApplicationOutboxEvent {
     val key: String
     fun deduplicationKey(): String
 }

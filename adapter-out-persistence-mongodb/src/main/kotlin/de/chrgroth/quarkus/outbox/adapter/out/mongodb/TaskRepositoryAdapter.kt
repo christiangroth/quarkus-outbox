@@ -6,8 +6,8 @@ import com.mongodb.client.model.ReturnDocument
 import com.mongodb.client.model.Sorts
 import com.mongodb.client.model.Updates
 import de.chrgroth.quarkus.outbox.adapter.out.mongodb.Task
-import de.chrgroth.quarkus.outbox.domain.OutboxEvent
-import de.chrgroth.quarkus.outbox.domain.OutboxPartition
+import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxEvent
+import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxTask
 import de.chrgroth.quarkus.outbox.domain.OutboxTaskPriority
 import de.chrgroth.quarkus.outbox.domain.OutboxTaskStatus
@@ -25,7 +25,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
   @Inject
   lateinit var metricsRecorder: MetricsRecorder
 
-  override fun claim(partition: OutboxPartition): OutboxTask? {
+  override fun claim(partition: ApplicationOutboxPartition): OutboxTask? {
     val now = Instant.now()
     val doc = metricsRecorder.timed("outbox.task.claim") {
       mongoCollection().findOneAndUpdate(
@@ -58,8 +58,8 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
   }
 
   override fun enqueue(
-    partition: OutboxPartition,
-    event: OutboxEvent,
+    partition: ApplicationOutboxPartition,
+    event: ApplicationOutboxEvent,
     payload: String,
     priority: OutboxTaskPriority,
   ): Boolean {
@@ -146,12 +146,12 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
     }
   }
 
-  override fun countByPartition(partition: OutboxPartition): Long =
+  override fun countByPartition(partition: ApplicationOutboxPartition): Long =
     metricsRecorder.timed("outbox.task.countByPartition") {
       count("partition = ?1", partition.key)
     }
 
-  override fun migratePartition(fromKey: String, toPartition: OutboxPartition): Long {
+  override fun migratePartition(fromKey: String, toPartition: ApplicationOutboxPartition): Long {
     val now = Instant.now()
     val result = metricsRecorder.timed("outbox.task.migratePartition") {
       mongoCollection().updateMany(

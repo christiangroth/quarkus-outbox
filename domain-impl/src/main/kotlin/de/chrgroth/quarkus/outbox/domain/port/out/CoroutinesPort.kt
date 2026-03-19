@@ -1,13 +1,13 @@
 package de.chrgroth.quarkus.outbox.domain.port.out
 
-import de.chrgroth.quarkus.outbox.domain.OutboxPartition
+import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
 import kotlinx.coroutines.CoroutineScope
 
 interface CoroutinesPort {
 
   fun getScope(): CoroutineScope
 
-  fun signal(partition: OutboxPartition)
+  fun signal(partition: ApplicationOutboxPartition)
 
-  suspend fun waitOnSignal(partition: OutboxPartition)
+  suspend fun waitOnSignal(partition: ApplicationOutboxPartition)
 }

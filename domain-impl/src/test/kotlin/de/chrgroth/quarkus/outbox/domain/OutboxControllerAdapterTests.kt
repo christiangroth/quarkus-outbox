@@ -1,8 +1,10 @@
 package de.chrgroth.quarkus.outbox.domain
 
+import de.chrgroth.quarkus.outbox.domain.port.out.ApplicationPort
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxPartitionObserver
+import de.chrgroth.quarkus.outbox.domain.port.out.OutboxTaskResult
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.TaskRepositoryPort
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
@@ -45,11 +47,11 @@ class OutboxControllerAdapterTests {
     taskPort, archivePort, partitionPort, coroutinesPort, meterRegistry, applicationPort, partitionObservers,
   )
 
-  private val partition = object : OutboxPartition {
+  private val partition = object : ApplicationOutboxPartition {
     override val key = "test-partition"
   }
 
-  private val noPausePartition = object : OutboxPartition {
+  private val noPausePartition = object : ApplicationOutboxPartition {
     override val key = "no-pause-partition"
     override val pauseOnRateLimit = false
   }
@@ -74,7 +76,7 @@ class OutboxControllerAdapterTests {
     lastError = null,
   )
 
-  private fun testEvent() = object : OutboxEvent {
+  private fun testEvent() = object : ApplicationOutboxEvent {
     override val key = "TEST_EVENT"
     override fun deduplicationKey() = "dedup-key"
   }
@@ -131,7 +133,7 @@ class OutboxControllerAdapterTests {
     every { partitionPort.activate(partition) } just runs
     every { partitionPort.findPartition(partition.key) } returns OutboxPartitionInfo(
       key = partition.key,
-      status = OutboxPartitionStatus.PAUSED.name,
+      status = OutboxPartitionStatus.PAUSED,
       statusReason = "rate_limited",
       pausedUntil = null,
     )
@@ -171,7 +173,7 @@ class OutboxControllerAdapterTests {
   fun `dispatchTask returns false immediately when partition is paused`() {
     every { partitionPort.findPartition(partition.key) } returns OutboxPartitionInfo(
       key = partition.key,
-      status = OutboxPartitionStatus.PAUSED.name,
+      status = OutboxPartitionStatus.PAUSED,
       statusReason = "manual",
       pausedUntil = null,
     )
@@ -293,7 +295,7 @@ class OutboxControllerAdapterTests {
     val task = task()
     val pausedInfo = OutboxPartitionInfo(
       key = partition.key,
-      status = OutboxPartitionStatus.PAUSED.name,
+      status = OutboxPartitionStatus.PAUSED,
       statusReason = "rate_limited",
       pausedUntil = null,
     )

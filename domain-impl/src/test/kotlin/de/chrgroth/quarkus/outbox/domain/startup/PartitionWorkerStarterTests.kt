@@ -1,10 +1,10 @@
 package de.chrgroth.quarkus.outbox.domain.startup
 
-import de.chrgroth.quarkus.outbox.domain.ApplicationPort
+import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxControllerAdapter
-import de.chrgroth.quarkus.outbox.domain.OutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionInfo
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
+import de.chrgroth.quarkus.outbox.domain.port.out.ApplicationPort
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
 import io.mockk.every
@@ -35,7 +35,7 @@ class PartitionWorkerStarterTests {
 
   private val startupEvent = StartupEvent()
 
-  private val partition = object : OutboxPartition {
+  private val partition = object : ApplicationOutboxPartition {
     override val key = "test-partition"
   }
 
@@ -60,7 +60,7 @@ class PartitionWorkerStarterTests {
     every { application.getAllPartitions() } returns listOf(partition)
     every { partitionPort.findOrCreate(partition) } returns OutboxPartitionInfo(
       key = partition.key,
-      status = OutboxPartitionStatus.ACTIVE.name,
+      status = OutboxPartitionStatus.ACTIVE,
       statusReason = null,
       pausedUntil = null,
     )
@@ -78,7 +78,7 @@ class PartitionWorkerStarterTests {
     every { application.getAllPartitions() } returns listOf(partition)
     every { partitionPort.findOrCreate(partition) } returns OutboxPartitionInfo(
       key = partition.key,
-      status = OutboxPartitionStatus.PAUSED.name,
+      status = OutboxPartitionStatus.PAUSED,
       statusReason = "manual",
       pausedUntil = null,
     )
@@ -95,7 +95,7 @@ class PartitionWorkerStarterTests {
     every { application.getAllPartitions() } returns listOf(partition)
     every { partitionPort.findOrCreate(partition) } returns OutboxPartitionInfo(
       key = partition.key,
-      status = OutboxPartitionStatus.PAUSED.name,
+      status = OutboxPartitionStatus.PAUSED,
       statusReason = "rate_limited",
       pausedUntil = Instant.now().minusSeconds(60),
     )
@@ -113,7 +113,7 @@ class PartitionWorkerStarterTests {
     every { application.getAllPartitions() } returns listOf(partition)
     every { partitionPort.findOrCreate(partition) } returns OutboxPartitionInfo(
       key = partition.key,
-      status = OutboxPartitionStatus.PAUSED.name,
+      status = OutboxPartitionStatus.PAUSED,
       statusReason = "rate_limited",
       pausedUntil = Instant.now().plusSeconds(60),
     )
@@ -126,17 +126,17 @@ class PartitionWorkerStarterTests {
 
   @Test
   fun `onStart handles multiple partitions independently`() {
-    val partitionA = object : OutboxPartition {
+    val partitionA = object : ApplicationOutboxPartition {
       override val key = "partition-a"
     }
-    val partitionB = object : OutboxPartition {
+    val partitionB = object : ApplicationOutboxPartition {
       override val key = "partition-b"
     }
     every { executionAdapter.resetStaleProcessingTasks() } just runs
     every { application.getAllPartitions() } returns listOf(partitionA, partitionB)
     every { partitionPort.findOrCreate(any()) } returns OutboxPartitionInfo(
       key = "any",
-      status = OutboxPartitionStatus.ACTIVE.name,
+      status = OutboxPartitionStatus.ACTIVE,
       statusReason = null,
       pausedUntil = null,
     )
@@ -157,7 +157,7 @@ class PartitionWorkerStarterTests {
     every { application.getAllPartitions() } returns listOf(partition)
     every { partitionPort.findOrCreate(partition) } returns OutboxPartitionInfo(
       key = partition.key,
-      status = OutboxPartitionStatus.ACTIVE.name,
+      status = OutboxPartitionStatus.ACTIVE,
       statusReason = null,
       pausedUntil = null,
     )

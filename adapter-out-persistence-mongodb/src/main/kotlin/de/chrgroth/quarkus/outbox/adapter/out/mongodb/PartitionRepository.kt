@@ -5,7 +5,7 @@ import com.mongodb.client.model.FindOneAndUpdateOptions
 import com.mongodb.client.model.ReturnDocument
 import com.mongodb.client.model.Updates
 import de.chrgroth.quarkus.outbox.adapter.out.mongodb.Partition
-import de.chrgroth.quarkus.outbox.domain.OutboxPartition
+import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionInfo
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
@@ -25,7 +25,7 @@ class PartitionRepository : PartitionRepositoryPort, PanacheMongoRepositoryBase<
       findById(partitionKey)?.toInfo()
     }
 
-  override fun findOrCreate(partition: OutboxPartition): OutboxPartitionInfo {
+  override fun findOrCreate(partition: ApplicationOutboxPartition): OutboxPartitionInfo {
     val doc = metricsRecorder.timed("outbox.partition.findOrCreate") {
       mongoCollection().findOneAndUpdate(
         Filters.eq("_id", partition.key),
@@ -36,7 +36,7 @@ class PartitionRepository : PartitionRepositoryPort, PanacheMongoRepositoryBase<
     return doc!!.toInfo()
   }
 
-  override fun pause(partition: OutboxPartition, reason: String, pausedUntil: Instant) {
+  override fun pause(partition: ApplicationOutboxPartition, reason: String, pausedUntil: Instant) {
     metricsRecorder.timed("outbox.partition.pause") {
       mongoCollection().findOneAndUpdate(
         Filters.eq("_id", partition.key),
@@ -50,7 +50,7 @@ class PartitionRepository : PartitionRepositoryPort, PanacheMongoRepositoryBase<
     }
   }
 
-  override fun activate(partition: OutboxPartition) {
+  override fun activate(partition: ApplicationOutboxPartition) {
     metricsRecorder.timed("outbox.partition.activate") {
       mongoCollection().findOneAndUpdate(
         Filters.eq("_id", partition.key),
@@ -66,7 +66,7 @@ class PartitionRepository : PartitionRepositoryPort, PanacheMongoRepositoryBase<
 
   private fun Partition.toInfo() = OutboxPartitionInfo(
     key = partitionKey,
-    status = status,
+    status = OutboxPartitionStatus.valueOf(status),
     statusReason = statusReason,
     pausedUntil = pausedUntil,
   )

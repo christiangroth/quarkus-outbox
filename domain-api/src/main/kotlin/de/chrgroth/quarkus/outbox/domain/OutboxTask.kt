@@ -16,3 +16,15 @@ data class OutboxTask(
     val priority: OutboxTaskPriority,
     val lastError: String?,
 )
+
+enum class OutboxTaskPriority {
+    NORMAL,
+    HIGH,
+}
+
+enum class OutboxTaskStatus {
+    PENDING,
+    PROCESSING,
+    DONE,
+    FAILED,
+}

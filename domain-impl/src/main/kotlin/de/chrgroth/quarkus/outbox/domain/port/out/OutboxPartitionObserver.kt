@@ -1,8 +1,8 @@
 package de.chrgroth.quarkus.outbox.domain.port.out
 
-import de.chrgroth.quarkus.outbox.domain.OutboxPartition
+import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
 
 interface OutboxPartitionObserver {
-    fun onPartitionPaused(partition: OutboxPartition)
-    fun onPartitionActivated(partition: OutboxPartition)
+    fun onPartitionPaused(partition: ApplicationOutboxPartition)
+    fun onPartitionActivated(partition: ApplicationOutboxPartition)
 }

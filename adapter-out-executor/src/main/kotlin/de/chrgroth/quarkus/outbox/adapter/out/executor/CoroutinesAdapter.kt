@@ -1,6 +1,6 @@
 package de.chrgroth.quarkus.outbox.adapter.out.executor
 
-import de.chrgroth.quarkus.outbox.domain.OutboxPartition
+import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import jakarta.annotation.PreDestroy
 import jakarta.enterprise.context.ApplicationScoped
@@ -19,15 +19,15 @@ class CoroutinesAdapter : CoroutinesPort {
 
   override fun getScope() = scope
 
-  override fun signal(partition: OutboxPartition) {
+  override fun signal(partition: ApplicationOutboxPartition) {
     channelFor(partition).trySend(Unit)
   }
 
-  override suspend fun waitOnSignal(partition: OutboxPartition) {
+  override suspend fun waitOnSignal(partition: ApplicationOutboxPartition) {
     channelFor(partition).receive()
   }
 
-  private fun channelFor(partition: OutboxPartition): Channel<Unit> =
+  private fun channelFor(partition: ApplicationOutboxPartition): Channel<Unit> =
     channels.getOrPut(partition.key) {
       Channel(Channel.CONFLATED)
     }

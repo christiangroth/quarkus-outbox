@@ -1,10 +1,12 @@
 package de.chrgroth.quarkus.outbox.domain
 
 import de.chrgroth.quarkus.outbox.domain.port.`in`.OutboxControllerPort
+import de.chrgroth.quarkus.outbox.domain.port.out.ApplicationPort
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxPartitionObserver
 import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepositoryPort
+import de.chrgroth.quarkus.outbox.domain.port.out.OutboxTaskResult
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.TaskRepositoryPort
 import io.micrometer.core.instrument.Counter
@@ -41,8 +43,8 @@ class OutboxControllerAdapter(
   // --- OutboxControllerPort: enqueue ---
 
   override fun enqueue(
-    partition: OutboxPartition,
-    event: OutboxEvent,
+    partition: ApplicationOutboxPartition,
+    event: ApplicationOutboxEvent,
     payload: String,
     priority: OutboxTaskPriority,
   ): Boolean {
@@ -58,21 +60,21 @@ class OutboxControllerAdapter(
 
   // --- OutboxControllerPort: activatePartition ---
 
-  override fun activatePartition(partition: OutboxPartition) {
+  override fun activatePartition(partition: ApplicationOutboxPartition) {
     partitionPort.activate(partition)
     getOrCreatePartitionStatusGauge(partition).set(1)
     partitionObservers.forEach { it.onPartitionActivated(partition) }
   }
 
-  private fun pausePartition(partition: OutboxPartition) {
+  private fun pausePartition(partition: ApplicationOutboxPartition) {
     getOrCreatePartitionStatusGauge(partition).set(0)
     partitionObservers.forEach { it.onPartitionPaused(partition) }
   }
 
-  private fun getOrCreatePartitionStatusGauge(partition: OutboxPartition): AtomicInteger =
+  private fun getOrCreatePartitionStatusGauge(partition: ApplicationOutboxPartition): AtomicInteger =
     partitionStatusGauges.getOrPut(partition.key) {
       val initialStatus = partitionPort.findPartition(partition.key)
-        ?.let { if (it.status == OutboxPartitionStatus.ACTIVE.name) 1 else 0 } ?: 1
+        ?.let { if (it.status == OutboxPartitionStatus.ACTIVE) 1 else 0 } ?: 1
       AtomicInteger(initialStatus).also { gauge ->
         Gauge.builder("outbox_partition_status", gauge) { it.get().toDouble() }
           .tag("partition", partition.key)
@@ -85,9 +87,9 @@ class OutboxControllerAdapter(
 
   fun resetStaleProcessingTasks() = taskPort.resetStaleProcessing()
 
-  fun dispatchTask(partition: OutboxPartition): Boolean {
+  fun dispatchTask(partition: ApplicationOutboxPartition): Boolean {
     val partitionInfo = partitionPort.findPartition(partition.key)
-    if (partitionInfo != null && partitionInfo.status == OutboxPartitionStatus.PAUSED.name) {
+    if (partitionInfo != null && partitionInfo.status == OutboxPartitionStatus.PAUSED) {
       return false
     }
     val task = taskPort.claim(partition) ?: return false
