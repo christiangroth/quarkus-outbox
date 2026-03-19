@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.time.Instant
 
-class ExecutionAdapterTests {
+class ArchiveAdapterTests {
 
   private val repository: OutboxRepository = mockk()
   private val meterRegistry = SimpleMeterRegistry()
@@ -238,4 +238,3 @@ class ExecutionAdapterTests {
     assertThat(result).isEqualTo(5L)
   }
 }
-

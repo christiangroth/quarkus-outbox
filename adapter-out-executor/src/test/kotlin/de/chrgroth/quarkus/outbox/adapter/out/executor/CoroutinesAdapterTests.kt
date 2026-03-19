@@ -39,35 +39,39 @@ class CoroutinesAdapterTests {
   }
 
   @Test
-  fun `wakeUp and waitOnSignal communicate for same partition`() = runBlocking {
-    adapter.signal(partitionA)
+  fun `wakeUp and waitOnSignal communicate for same partition`() {
+    runBlocking {
+      adapter.signal(partitionA)
 
-    var signalReceived = false
-    withTimeout(1000) {
-      adapter.waitOnSignal(partitionA)
-      signalReceived = true
+      var signalReceived = false
+      withTimeout(1000) {
+        adapter.waitOnSignal(partitionA)
+        signalReceived = true
+      }
+
+      assertThat(signalReceived).isTrue()
     }
-
-    assertThat(signalReceived).isTrue()
   }
 
   @Test
-  fun `wakeUp for one partition does not signal another partition`() = runBlocking {
-    adapter.signal(partitionA)
+  fun `wakeUp for one partition does not signal another partition`() {
+    runBlocking {
+      adapter.signal(partitionA)
 
-    var partitionBSignalled = false
-    val job = launch {
-      try {
-        withTimeout(100) {
-          adapter.waitOnSignal(partitionB)
-          partitionBSignalled = true
+      var partitionBSignalled = false
+      val job = launch {
+        try {
+          withTimeout(100) {
+            adapter.waitOnSignal(partitionB)
+            partitionBSignalled = true
+          }
+        } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+          // expected – partitionB was not signalled
         }
-      } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
-        // expected – partitionB was not signalled
       }
-    }
-    job.join()
+      job.join()
 
-    assertThat(partitionBSignalled).isFalse()
+      assertThat(partitionBSignalled).isFalse()
+    }
   }
 }
