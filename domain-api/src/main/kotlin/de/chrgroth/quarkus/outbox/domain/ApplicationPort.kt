@@ -1,7 +1,5 @@
-package de.chrgroth.quarkus.outbox.domain.port.out
+package de.chrgroth.quarkus.outbox.domain
 
-import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
-import de.chrgroth.quarkus.outbox.domain.OutboxTask
 import java.time.Duration
 
 interface ApplicationPort {

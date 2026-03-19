@@ -1,9 +1,9 @@
 package de.chrgroth.quarkus.outbox.domain.startup
 
 import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
+import de.chrgroth.quarkus.outbox.domain.ApplicationPort
 import de.chrgroth.quarkus.outbox.domain.OutboxControllerAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
-import de.chrgroth.quarkus.outbox.domain.port.out.ApplicationPort
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
 import io.quarkus.runtime.StartupEvent

@@ -2,7 +2,6 @@ package de.chrgroth.quarkus.outbox.adapter.out.mongodb
 
 import com.mongodb.client.model.Filters
 import com.mongodb.client.model.ReplaceOptions
-import de.chrgroth.quarkus.outbox.adapter.out.mongodb.ArchivedTask
 import de.chrgroth.quarkus.outbox.domain.OutboxTask
 import de.chrgroth.quarkus.outbox.domain.OutboxTaskStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
@@ -19,20 +18,8 @@ class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort, PanacheMongoRe
 
   override fun append(task: OutboxTask) {
     val now = Instant.now()
-    val archiveDoc = ArchivedTask().apply {
-      id = task.id
-      partition = task.partition
-      eventType = task.eventType
-      deduplicationKey = task.deduplicationKey
-      payload = task.payload
+    val archiveDoc = buildArchivedTask(task, now).apply {
       status = OutboxTaskStatus.DONE.name
-      attempts = task.attempts
-      createdAt = task.createdAt
-      updatedAt = now
-      nextRetryAt = task.nextRetryAt
-      priority = task.priority.name
-      lastError = task.lastError
-      completedAt = now
     }
     metricsRecorder.timed("outbox.archive.append") {
       persist(archiveDoc)
@@ -41,20 +28,11 @@ class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort, PanacheMongoRe
 
   override fun appendFailed(task: OutboxTask, error: String) {
     val now = Instant.now()
-    val archiveDoc = ArchivedTask().apply {
-      id = task.id
-      partition = task.partition
-      eventType = task.eventType
-      deduplicationKey = task.deduplicationKey
-      payload = task.payload
+    val archiveDoc = buildArchivedTask(task, now).apply {
       status = OutboxTaskStatus.FAILED.name
       attempts = task.attempts + 1
-      createdAt = task.createdAt
-      updatedAt = now
       nextRetryAt = null
-      priority = task.priority.name
       lastError = error
-      completedAt = now
     }
     metricsRecorder.timed("outbox.archive.appendFailed") {
       persist(archiveDoc)
@@ -63,20 +41,9 @@ class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort, PanacheMongoRe
 
   override fun upsertFailed(task: OutboxTask) {
     val now = Instant.now()
-    val archiveDoc = ArchivedTask().apply {
-      id = task.id
-      partition = task.partition
-      eventType = task.eventType
-      deduplicationKey = task.deduplicationKey
-      payload = task.payload
+    val archiveDoc = buildArchivedTask(task, now).apply {
       status = OutboxTaskStatus.FAILED.name
-      attempts = task.attempts
-      createdAt = task.createdAt
-      updatedAt = now
       nextRetryAt = null
-      priority = task.priority.name
-      lastError = task.lastError
-      completedAt = now
     }
     metricsRecorder.timed("outbox.archive.upsertFailed") {
       mongoCollection().replaceOne(
@@ -94,6 +61,22 @@ class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort, PanacheMongoRe
       )
     }
     return result.deletedCount
+  }
+
+  private fun buildArchivedTask(task: OutboxTask, now: Instant): ArchivedTask = ArchivedTask().apply {
+    id = task.id
+    partition = task.partition
+    eventType = task.eventType
+    deduplicationKey = task.deduplicationKey
+    payload = task.payload
+    status = ""
+    attempts = task.attempts
+    createdAt = task.createdAt
+    updatedAt = now
+    nextRetryAt = task.nextRetryAt
+    priority = task.priority.name
+    lastError = task.lastError
+    completedAt = now
   }
 }
 

@@ -1,10 +1,7 @@
 package de.chrgroth.quarkus.outbox.domain
 
-import de.chrgroth.quarkus.outbox.domain.port.out.ApplicationPort
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
-import de.chrgroth.quarkus.outbox.domain.port.out.OutboxPartitionObserver
-import de.chrgroth.quarkus.outbox.domain.port.out.OutboxTaskResult
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.TaskRepositoryPort
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry

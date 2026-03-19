@@ -1,12 +1,7 @@
 package de.chrgroth.quarkus.outbox.domain
 
-import de.chrgroth.quarkus.outbox.domain.port.`in`.OutboxControllerPort
-import de.chrgroth.quarkus.outbox.domain.port.out.ApplicationPort
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
-import de.chrgroth.quarkus.outbox.domain.port.out.OutboxPartitionObserver
-import de.chrgroth.quarkus.outbox.domain.port.out.OutboxRepositoryPort
-import de.chrgroth.quarkus.outbox.domain.port.out.OutboxTaskResult
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.TaskRepositoryPort
 import io.micrometer.core.instrument.Counter
@@ -31,7 +26,7 @@ class OutboxControllerAdapter(
   private val meterRegistry: MeterRegistry,
   private val applicationPort: ApplicationPort,
   @param:Any private val partitionObservers: Instance<OutboxPartitionObserver>,
-) : OutboxControllerPort, OutboxRepositoryPort {
+) {
 
   private val retryPolicy = RetryPolicy()
   private val enqueuedCounters = ConcurrentHashMap<String, Counter>()
@@ -42,7 +37,7 @@ class OutboxControllerAdapter(
 
   // --- OutboxControllerPort: enqueue ---
 
-  override fun enqueue(
+  fun enqueue(
     partition: ApplicationOutboxPartition,
     event: ApplicationOutboxEvent,
     payload: String,
@@ -60,7 +55,7 @@ class OutboxControllerAdapter(
 
   // --- OutboxControllerPort: activatePartition ---
 
-  override fun activatePartition(partition: ApplicationOutboxPartition) {
+  fun activatePartition(partition: ApplicationOutboxPartition) {
     partitionPort.activate(partition)
     getOrCreatePartitionStatusGauge(partition).set(1)
     partitionObservers.forEach { it.onPartitionActivated(partition) }
@@ -145,12 +140,12 @@ class OutboxControllerAdapter(
 
   // --- OutboxRepositoryPort ---
 
-  override fun complete(task: OutboxTask) {
+  fun complete(task: OutboxTask) {
     archivePort.append(task)
     taskPort.delete(task)
   }
 
-  override fun fail(task: OutboxTask, error: String, nextRetryAt: Instant?) {
+  fun fail(task: OutboxTask, error: String, nextRetryAt: Instant?) {
     if (nextRetryAt == null) {
       archivePort.appendFailed(task, error)
       taskPort.delete(task)
