@@ -14,6 +14,4 @@ interface TaskRepositoryPort {
   fun reschedule(task: OutboxTask, nextRetryAt: Instant)
   fun resetStaleProcessing()
   fun countByPartition(partition: ApplicationOutboxPartition): Long
-  fun migratePartition(fromKey: String, toPartition: ApplicationOutboxPartition): Long
-  fun listFailed(): List<OutboxTask>
 }

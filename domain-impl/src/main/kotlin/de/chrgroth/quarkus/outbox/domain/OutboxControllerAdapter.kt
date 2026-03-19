@@ -24,7 +24,7 @@ class OutboxControllerAdapter(
   private val partitionPort: PartitionRepositoryPort,
   private val coroutinesPort: CoroutinesPort,
   private val meterRegistry: MeterRegistry,
-  private val applicationPort: ApplicationPort,
+  private val applicationOutboxDispatcher: ApplicationOutboxDispatcher,
   @param:Any private val partitionObservers: Instance<OutboxPartitionObserver>,
 ) {
 
@@ -42,7 +42,7 @@ class OutboxControllerAdapter(
     event: ApplicationOutboxEvent,
     payload: String,
     priority: OutboxTaskPriority,
-  ): Boolean {
+  ) {
     val inserted = taskPort.enqueue(partition, event, payload, priority)
     if (inserted) {
       coroutinesPort.signal(partition)
@@ -50,13 +50,12 @@ class OutboxControllerAdapter(
         meterRegistry.counter("outbox_tasks_enqueued_total", "partition", partition.key)
       }.increment()
     }
-    return inserted
   }
 
   // --- OutboxControllerPort: activatePartition ---
 
   fun activatePartition(partition: ApplicationOutboxPartition) {
-    partitionPort.activate(partition)
+    partitionPort.resume(partition)
     getOrCreatePartitionStatusGauge(partition).set(1)
     partitionObservers.forEach { it.onPartitionActivated(partition) }
   }
@@ -68,8 +67,10 @@ class OutboxControllerAdapter(
 
   private fun getOrCreatePartitionStatusGauge(partition: ApplicationOutboxPartition): AtomicInteger =
     partitionStatusGauges.getOrPut(partition.key) {
-      val initialStatus = partitionPort.findPartition(partition.key)
-        ?.let { if (it.status == OutboxPartitionStatus.ACTIVE) 1 else 0 } ?: 1
+      val initialStatus = partitionPort.findOrCreate(partition).let {
+        if (it.status == OutboxPartitionStatus.ACTIVE) 1 else 0
+      }
+
       AtomicInteger(initialStatus).also { gauge ->
         Gauge.builder("outbox_partition_status", gauge) { it.get().toDouble() }
           .tag("partition", partition.key)
@@ -83,14 +84,16 @@ class OutboxControllerAdapter(
   fun resetStaleProcessingTasks() = taskPort.resetStaleProcessing()
 
   fun dispatchTask(partition: ApplicationOutboxPartition): Boolean {
-    val partitionInfo = partitionPort.findPartition(partition.key)
-    if (partitionInfo != null && partitionInfo.status == OutboxPartitionStatus.PAUSED) {
+    val partitionInfo = partitionPort.findOrCreate(partition)
+    if (partitionInfo.status == OutboxPartitionStatus.PAUSED) {
       return false
     }
-    val task = taskPort.claim(partition) ?: return false
 
-    return when (val result = applicationPort.dispatch(task)) {
-      is OutboxTaskResult.Success -> {
+    val task = taskPort.claim(partition)
+      ?: return false
+
+    return when (val result = applicationOutboxDispatcher.dispatch(task)) {
+      is DispatchResult.Success -> {
         complete(task)
         processedCounters.getOrPut(partition.key) {
           meterRegistry.counter("outbox_tasks_processed_total", "partition", partition.key)
@@ -98,7 +101,7 @@ class OutboxControllerAdapter(
         true
       }
 
-      is OutboxTaskResult.RateLimited -> {
+      is DispatchResult.RateLimited -> {
         if (partition.pauseOnRateLimit) {
           val pausedUntil = Instant.now().plus(result.retryAfter)
           partitionPort.pause(partition, "rate_limited", pausedUntil)
@@ -121,7 +124,7 @@ class OutboxControllerAdapter(
         false
       }
 
-      is OutboxTaskResult.Failed -> {
+      is DispatchResult.Failed -> {
         val newAttempts = task.attempts + 1
         if (newAttempts >= retryPolicy.maxAttempts) {
           fail(task, result.message, null)

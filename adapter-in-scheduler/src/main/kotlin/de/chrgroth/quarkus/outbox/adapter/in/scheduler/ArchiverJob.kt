@@ -12,16 +12,15 @@ import java.time.temporal.ChronoUnit
 @Suppress("Unused")
 class ArchiverJob(
   private val archiverPort: ArchiverPort,
-  @param:ConfigProperty(name = "app.outbox.archive-retention-days")
+  @param:ConfigProperty(name = "outbox.archive-retention-days")
   private val retentionDays: Long,
 ) {
 
   @Scheduled(cron = "0 0 1 * * ?")
   fun run() {
     logger.info { "Running outbox archive cleanup (retention: $retentionDays days)" }
-    archiverPort.archiveFailedTasks()
     val cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS)
-    archiverPort.deleteEntriesOlderThan(cutoff).also { deletionCount ->
+    archiverPort.deleteOlderThan(cutoff).also { deletionCount ->
       logger.info { "Outbox archive cleanup deleted $deletionCount entries older than $cutoff" }
     }
   }

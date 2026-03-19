@@ -1,7 +1,7 @@
 package de.chrgroth.quarkus.outbox.domain.startup
 
+import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxDispatcher
 import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
-import de.chrgroth.quarkus.outbox.domain.ApplicationPort
 import de.chrgroth.quarkus.outbox.domain.OutboxControllerAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
@@ -22,7 +22,7 @@ class PartitionWorkerStarter(
   private val coroutinesPort: CoroutinesPort,
   private val partitionPort: PartitionRepositoryPort,
   private val executionAdapter: OutboxControllerAdapter,
-  private val application: ApplicationPort,
+  private val application: ApplicationOutboxDispatcher,
 ) {
 
   fun onStart(@Observes @Priority(1) event: StartupEvent) {

@@ -1,7 +1,6 @@
 package de.chrgroth.quarkus.outbox.adapter.out.mongodb
 
 import com.mongodb.client.model.Filters
-import com.mongodb.client.model.ReplaceOptions
 import de.chrgroth.quarkus.outbox.domain.OutboxTask
 import de.chrgroth.quarkus.outbox.domain.OutboxTaskStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
@@ -17,62 +16,50 @@ class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort, PanacheMongoRe
   lateinit var metricsRecorder: MetricsRecorder
 
   override fun append(task: OutboxTask) {
-    val archiveDoc = buildArchivedTask(task, OutboxTaskStatus.DONE)
     metricsRecorder.timed("outbox.archive.append") {
-      persist(archiveDoc)
+      persist(
+        buildArchivedTask(task, OutboxTaskStatus.DONE)
+      )
     }
   }
 
   override fun appendFailed(task: OutboxTask, error: String) {
-    val archiveDoc = buildArchivedTask(task, OutboxTaskStatus.FAILED).apply {
-      attempts = task.attempts + 1
-      nextRetryAt = null
-      lastError = error
-    }
     metricsRecorder.timed("outbox.archive.appendFailed") {
-      persist(archiveDoc)
-    }
-  }
-
-  override fun upsertFailed(task: OutboxTask) {
-    val archiveDoc = buildArchivedTask(task, OutboxTaskStatus.FAILED).apply {
-      nextRetryAt = null
-    }
-    metricsRecorder.timed("outbox.archive.upsertFailed") {
-      mongoCollection().replaceOne(
-        Filters.eq("_id", task.id),
-        archiveDoc,
-        ReplaceOptions().upsert(true),
+      persist(
+        buildArchivedTask(task, OutboxTaskStatus.FAILED)
+          .apply {
+            attempts = task.attempts + 1
+            nextRetryAt = null
+            lastError = error
+          }
       )
     }
   }
 
-  override fun deleteEntriesOlderThan(cutoff: Instant): Long {
-    val result = metricsRecorder.timed("outbox.archive.deleteEntriesOlderThan") {
+  override fun deleteOlderThan(cutoff: Instant): Long =
+    metricsRecorder.timed("outbox.archive.deleteEntriesOlderThan") {
       mongoCollection().deleteMany(
         Filters.lt("completedAt", cutoff),
       )
-    }
-    return result.deletedCount
-  }
+    }.deletedCount
 
-  private fun buildArchivedTask(task: OutboxTask, status: OutboxTaskStatus): ArchivedTask {
-    val now = Instant.now()
-    return ArchivedTask().apply {
-      id = task.id
-      partition = task.partition
-      eventType = task.eventType
-      deduplicationKey = task.deduplicationKey
-      payload = task.payload
-      this.status = status.name
-      attempts = task.attempts
-      createdAt = task.createdAt
-      updatedAt = now
-      nextRetryAt = task.nextRetryAt
-      priority = task.priority.name
-      lastError = task.lastError
-      completedAt = now
+  private fun buildArchivedTask(task: OutboxTask, status: OutboxTaskStatus): ArchivedTask =
+    Instant.now().let { now ->
+      ArchivedTask().apply {
+        id = task.id
+        partition = task.partition
+        eventType = task.eventType
+        deduplicationKey = task.deduplicationKey
+        payload = task.payload
+        this.status = status.name
+        attempts = task.attempts
+        createdAt = task.createdAt
+        updatedAt = now
+        nextRetryAt = task.nextRetryAt
+        priority = task.priority.name
+        lastError = task.lastError
+        completedAt = now
+      }
     }
-  }
 }
 

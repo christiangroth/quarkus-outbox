@@ -1,7 +1,7 @@
 package de.chrgroth.quarkus.outbox.domain.startup
 
+import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxDispatcher
 import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
-import de.chrgroth.quarkus.outbox.domain.ApplicationPort
 import de.chrgroth.quarkus.outbox.domain.OutboxControllerAdapter
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionInfo
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
@@ -29,7 +29,7 @@ class PartitionWorkerStarterTests {
   }
   private val partitionPort: PartitionRepositoryPort = mockk()
   private val executionAdapter: OutboxControllerAdapter = mockk()
-  private val application: ApplicationPort = mockk()
+  private val application: ApplicationOutboxDispatcher = mockk()
 
   private val recovery = PartitionWorkerStarter(coroutinesPort, partitionPort, executionAdapter, application)
 
