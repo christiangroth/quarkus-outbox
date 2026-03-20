@@ -42,7 +42,7 @@ class OutboxControllerAdapter(
     event: ApplicationOutboxEvent,
     payload: String,
     priority: OutboxTaskPriority,
-  ) {
+  ): Boolean {
     val inserted = taskPort.enqueue(partition, event, payload, priority)
     if (inserted) {
       coroutinesPort.signal(partition)
@@ -50,6 +50,7 @@ class OutboxControllerAdapter(
         meterRegistry.counter("outbox_tasks_enqueued_total", "partition", partition.key)
       }.increment()
     }
+    return inserted
   }
 
   // --- OutboxControllerPort: activatePartition ---

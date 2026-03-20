@@ -61,7 +61,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
     payload: String,
     priority: OutboxTaskPriority,
   ): Boolean {
-    val deduplicationKey = event.deduplicationKey()
+    val deduplicationKey = event.deduplicationKey
     val existing = metricsRecorder.timed("outbox.task.dedupCheck") {
       mongoCollection().find(
         Filters.and(
