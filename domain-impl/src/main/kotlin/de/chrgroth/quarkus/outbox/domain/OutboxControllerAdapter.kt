@@ -59,7 +59,7 @@ class OutboxControllerAdapter(
       enqueuedCounters.getOrPut(partition.key) {
         meterRegistry.counter("outbox_tasks_enqueued_total", "partition", partition.key)
       }.increment()
-      taskEnqueuedEvents.fireAsync(OutboxTaskEnqueuedEvent(partition, event.key, event.deduplicationKey, priority))
+      taskEnqueuedEvents.fireAsync(OutboxTaskEnqueuedEvent(partition, event.key))
     }
     return inserted
   }
@@ -106,7 +106,7 @@ class OutboxControllerAdapter(
 
     return when (val result = applicationOutboxDispatcher.dispatch(task)) {
       is DispatchResult.Success -> {
-        complete(task)
+        complete(task, partition)
         processedCounters.getOrPut(partition.key) {
           meterRegistry.counter("outbox_tasks_processed_total", "partition", partition.key)
         }.increment()
@@ -139,11 +139,11 @@ class OutboxControllerAdapter(
       is DispatchResult.Failed -> {
         val newAttempts = task.attempts + 1
         if (newAttempts >= retryPolicy.maxAttempts) {
-          fail(task, result.message, null)
+          fail(task, result.message, null, partition)
         } else {
           val delay = retryPolicy.backoff.getOrElse(task.attempts) { retryPolicy.backoff.last() }
           val nextRetryAt = Instant.now().plus(delay)
-          fail(task, result.message, nextRetryAt)
+          fail(task, result.message, nextRetryAt, partition)
         }
         failedCounters.getOrPut(partition.key) {
           meterRegistry.counter("outbox_tasks_failed_total", "partition", partition.key)
@@ -155,20 +155,20 @@ class OutboxControllerAdapter(
 
   // --- OutboxRepositoryPort ---
 
-  fun complete(task: OutboxTask) {
+  fun complete(task: OutboxTask, partition: ApplicationOutboxPartition) {
     archivePort.append(task)
     taskPort.delete(task)
-    taskDispatchedEvents.fireAsync(OutboxTaskDispatchedEvent(task))
+    taskDispatchedEvents.fireAsync(OutboxTaskDispatchedEvent(partition, task.eventType))
   }
 
-  fun fail(task: OutboxTask, error: String, nextRetryAt: Instant?) {
+  fun fail(task: OutboxTask, error: String, nextRetryAt: Instant?, partition: ApplicationOutboxPartition) {
     if (nextRetryAt == null) {
       archivePort.appendFailed(task, error)
       taskPort.delete(task)
-      taskFailedEvents.fireAsync(OutboxTaskFailedEvent(task, error))
+      taskFailedEvents.fireAsync(OutboxTaskFailedEvent(partition, task.eventType))
     } else {
       taskPort.scheduleRetry(task, error, nextRetryAt)
-      taskRetryScheduledEvents.fireAsync(OutboxTaskRetryScheduledEvent(task, error, nextRetryAt))
+      taskRetryScheduledEvents.fireAsync(OutboxTaskRetryScheduledEvent(partition, task.eventType))
     }
   }
 

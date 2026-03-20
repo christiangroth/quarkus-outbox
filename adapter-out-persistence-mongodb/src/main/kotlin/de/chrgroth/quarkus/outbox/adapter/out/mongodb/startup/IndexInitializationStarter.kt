@@ -40,6 +40,14 @@ class IndexInitializationStarter {
           Document("partition", 1).append("deduplicationKey", 1).append("status", 1),
           "partition_1_deduplicationKey_1_status_1",
         ),
+        OutboxIndex(
+          Document("status", 1),
+          "status_1",
+        ),
+        OutboxIndex(
+          Document("partition", 1),
+          "partition_1",
+        ),
       ),
     )
 

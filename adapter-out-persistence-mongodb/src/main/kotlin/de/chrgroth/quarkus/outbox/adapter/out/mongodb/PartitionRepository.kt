@@ -30,6 +30,11 @@ class PartitionRepository : PartitionRepositoryPort, PanacheMongoRepositoryBase<
     return doc!!.toInfo()
   }
 
+  override fun findAllPartitions(): List<OutboxPartitionInfo> =
+    metricsRecorder.timed("outbox.partition.findAll") {
+      listAll().map { it.toInfo() }
+    }
+
   override fun pause(partition: ApplicationOutboxPartition, reason: String, pausedUntil: Instant) {
     metricsRecorder.timed("outbox.partition.pause") {
       mongoCollection().findOneAndUpdate(

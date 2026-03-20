@@ -1,20 +1,17 @@
 package de.chrgroth.quarkus.outbox.domain.event
 
-import de.chrgroth.quarkus.outbox.domain.OutboxTask
-import java.time.Instant
+import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
 
 /**
  * CDI event fired when an outbox task has failed dispatch but will be retried.
  *
  * This event is fired asynchronously (fire-and-forget). The task remains in the
- * pending queue and will be retried at [nextRetryAt].
+ * pending queue and will be retried automatically.
  *
- * @property task The task that failed and is scheduled for retry.
- * @property error A description of the failure that triggered the retry.
- * @property nextRetryAt The time at which the task will next be attempted.
+ * @property partition The partition the task belongs to.
+ * @property eventType The type key of the event scheduled for retry.
  */
 data class OutboxTaskRetryScheduledEvent(
-    val task: OutboxTask,
-    val error: String,
-    val nextRetryAt: Instant,
+    val partition: ApplicationOutboxPartition,
+    val eventType: String,
 )

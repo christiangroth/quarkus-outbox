@@ -1,17 +1,17 @@
 package de.chrgroth.quarkus.outbox.domain.event
 
-import de.chrgroth.quarkus.outbox.domain.OutboxTask
+import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
 
 /**
  * CDI event fired when an outbox task has permanently failed after exhausting all retries.
  *
  * This event is fired asynchronously (fire-and-forget). The task has been moved to the
- * archive as [OutboxTask.status] = `FAILED` and will not be retried.
+ * archive as `FAILED` and will not be retried.
  *
- * @property task The task that has permanently failed.
- * @property error A description of the final failure.
+ * @property partition The partition the task belonged to.
+ * @property eventType The type key of the failed event.
  */
 data class OutboxTaskFailedEvent(
-    val task: OutboxTask,
-    val error: String,
+    val partition: ApplicationOutboxPartition,
+    val eventType: String,
 )

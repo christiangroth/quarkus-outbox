@@ -12,7 +12,7 @@ import java.time.temporal.ChronoUnit
 @Suppress("Unused")
 class ArchiverJob(
   private val archiverPort: ArchiverPort,
-  @param:ConfigProperty(name = "outbox.archive-retention-days")
+  @param:ConfigProperty(name = "outbox.archive.retention-days")
   private val retentionDays: Long,
 ) {
 

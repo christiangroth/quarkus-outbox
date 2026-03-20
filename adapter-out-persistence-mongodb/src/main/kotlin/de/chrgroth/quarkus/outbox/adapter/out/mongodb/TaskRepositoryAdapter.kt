@@ -54,7 +54,6 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
     }
   }
 
-  // TODO return type?
   override fun enqueue(
     partition: ApplicationOutboxPartition,
     event: ApplicationOutboxEvent,
@@ -98,7 +97,6 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
     return true
   }
 
-  // TODO vs reschedule
   override fun scheduleRetry(task: OutboxTask, error: String, nextRetryAt: Instant) {
     val now = Instant.now()
     metricsRecorder.timed("outbox.task.scheduleRetry") {
@@ -146,7 +144,6 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
     }
   }
 
-  // TODO usage?
   override fun countByPartition(partition: ApplicationOutboxPartition): Long =
     metricsRecorder.timed("outbox.task.countByPartition") {
       count("partition = ?1", partition.key)
