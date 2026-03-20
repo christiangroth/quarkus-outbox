@@ -54,6 +54,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
     }
   }
 
+  // TODO return type?
   override fun enqueue(
     partition: ApplicationOutboxPartition,
     event: ApplicationOutboxEvent,
@@ -145,6 +146,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
     }
   }
 
+  // TODO usage?
   override fun countByPartition(partition: ApplicationOutboxPartition): Long =
     metricsRecorder.timed("outbox.task.countByPartition") {
       count("partition = ?1", partition.key)
