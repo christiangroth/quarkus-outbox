@@ -1,5 +1,11 @@
 package de.chrgroth.quarkus.outbox.domain
 
+import de.chrgroth.quarkus.outbox.domain.event.OutboxPartitionActivatedEvent
+import de.chrgroth.quarkus.outbox.domain.event.OutboxPartitionPausedEvent
+import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskDispatchedEvent
+import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskEnqueuedEvent
+import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskFailedEvent
+import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskRetryScheduledEvent
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
@@ -10,7 +16,7 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
 import io.mockk.verify
-import jakarta.enterprise.inject.Instance
+import jakarta.enterprise.event.Event
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
@@ -19,6 +25,7 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.CompletableFuture
 
 class OutboxControllerAdapterTests {
 
@@ -27,12 +34,18 @@ class OutboxControllerAdapterTests {
   private val partitionPort: PartitionRepositoryPort = mockk()
   private val meterRegistry = SimpleMeterRegistry()
   private val applicationOutboxDispatcher: ApplicationOutboxDispatcher = mockk()
-  private val partitionObserver: OutboxPartitionObserver = mockk(relaxed = true)
 
   @Suppress("UNCHECKED_CAST")
-  private val partitionObservers: Instance<OutboxPartitionObserver> = mockk<Instance<OutboxPartitionObserver>>().also {
-    every { it.iterator() } answers { mutableListOf(partitionObserver).iterator() }
+  private fun <T> relaxedEventMock(): Event<T> = mockk<Event<T>>(relaxed = true).also {
+    every { it.fireAsync(any()) } returns CompletableFuture.completedFuture(null as T)
   }
+
+  private val partitionActivatedEvents: Event<OutboxPartitionActivatedEvent> = relaxedEventMock()
+  private val partitionPausedEvents: Event<OutboxPartitionPausedEvent> = relaxedEventMock()
+  private val taskEnqueuedEvents: Event<OutboxTaskEnqueuedEvent> = relaxedEventMock()
+  private val taskDispatchedEvents: Event<OutboxTaskDispatchedEvent> = relaxedEventMock()
+  private val taskRetryScheduledEvents: Event<OutboxTaskRetryScheduledEvent> = relaxedEventMock()
+  private val taskFailedEvents: Event<OutboxTaskFailedEvent> = relaxedEventMock()
 
   private val testScope = CoroutineScope(Dispatchers.IO)
   private val coroutinesPort: CoroutinesPort = mockk {
@@ -41,7 +54,9 @@ class OutboxControllerAdapterTests {
   }
 
   private val adapter = OutboxControllerAdapter(
-    taskPort, archivePort, partitionPort, coroutinesPort, meterRegistry, applicationOutboxDispatcher, partitionObservers,
+    taskPort, archivePort, partitionPort, coroutinesPort, meterRegistry, applicationOutboxDispatcher,
+    partitionActivatedEvents, partitionPausedEvents,
+    taskEnqueuedEvents, taskDispatchedEvents, taskRetryScheduledEvents, taskFailedEvents,
   )
 
   private val partition = object : ApplicationOutboxPartition {
@@ -92,13 +107,15 @@ class OutboxControllerAdapterTests {
 
   @Test
   fun `enqueue signals partition and increments counter when task is inserted`() {
+    val event = testEvent()
     every { taskPort.enqueue(partition, any(), any(), any()) } returns true
 
-    val result = adapter.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.NORMAL)
+    val result = adapter.enqueue(partition, event, "payload", OutboxTaskPriority.NORMAL)
 
     assertThat(result).isTrue()
     verify { coroutinesPort.signal(partition) }
     assertThat(meterRegistry.counter("outbox_tasks_enqueued_total", "partition", partition.key).count()).isEqualTo(1.0)
+    verify { taskEnqueuedEvents.fireAsync(OutboxTaskEnqueuedEvent(partition, event.key, event.deduplicationKey, OutboxTaskPriority.NORMAL)) }
   }
 
   @Test
@@ -110,6 +127,7 @@ class OutboxControllerAdapterTests {
     assertThat(result).isFalse()
     verify(exactly = 0) { coroutinesPort.signal(any()) }
     assertThat(meterRegistry.find("outbox_tasks_enqueued_total").counter()).isNull()
+    verify(exactly = 0) { taskEnqueuedEvents.fireAsync(any()) }
   }
 
   @Test
@@ -124,14 +142,14 @@ class OutboxControllerAdapterTests {
   // --- activatePartition ---
 
   @Test
-  fun `activatePartition calls repository activates gauge and notifies observers`() {
+  fun `activatePartition calls repository activates gauge and fires activated event`() {
     every { partitionPort.resume(partition) } just runs
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
 
     adapter.activatePartition(partition)
 
     verify { partitionPort.resume(partition) }
-    verify { partitionObserver.onPartitionActivated(partition) }
+    verify { partitionActivatedEvents.fireAsync(OutboxPartitionActivatedEvent(partition)) }
     assertThat(meterRegistry.find("outbox_partition_status").tag("partition", partition.key).gauge()?.value()).isEqualTo(1.0)
   }
 
@@ -151,7 +169,7 @@ class OutboxControllerAdapterTests {
   }
 
   @Test
-  fun `dispatchTask pausing sets gauge to zero and notifies observers on rate limit`() {
+  fun `dispatchTask pausing sets gauge to zero and fires paused event on rate limit`() {
     val task = task()
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
@@ -162,7 +180,7 @@ class OutboxControllerAdapterTests {
 
     adapter.dispatchTask(partition)
 
-    verify { partitionObserver.onPartitionPaused(partition) }
+    verify { partitionPausedEvents.fireAsync(match { it.partition == partition && it.reason == "rate_limited" }) }
     assertThat(meterRegistry.find("outbox_partition_status").tag("partition", partition.key).gauge()?.value()).isEqualTo(0.0)
   }
 
@@ -202,6 +220,7 @@ class OutboxControllerAdapterTests {
     verify { archivePort.append(task) }
     verify { taskPort.delete(task) }
     assertThat(meterRegistry.counter("outbox_tasks_processed_total", "partition", partition.key).count()).isEqualTo(1.0)
+    verify { taskDispatchedEvents.fireAsync(OutboxTaskDispatchedEvent(task)) }
   }
 
   @Test
@@ -216,6 +235,7 @@ class OutboxControllerAdapterTests {
     assertThat(adapter.dispatchTask(partition)).isTrue()
     assertThat(capturedNextRetryAt.first()).isNotNull()
     assertThat(meterRegistry.counter("outbox_tasks_failed_total", "partition", partition.key).count()).isEqualTo(1.0)
+    verify { taskRetryScheduledEvents.fireAsync(match { it.task == task && it.error == "dispatch failed" }) }
   }
 
   @Test
@@ -231,6 +251,7 @@ class OutboxControllerAdapterTests {
     verify { archivePort.appendFailed(task, "permanent failure") }
     verify { taskPort.delete(task) }
     assertThat(meterRegistry.counter("outbox_tasks_failed_total", "partition", partition.key).count()).isEqualTo(1.0)
+    verify { taskFailedEvents.fireAsync(OutboxTaskFailedEvent(task, "permanent failure")) }
   }
 
   @Test
@@ -268,7 +289,7 @@ class OutboxControllerAdapterTests {
   }
 
   @Test
-  fun `dispatchTask pauses partition reschedules task increments rateLimitedCounter and notifies observers`() {
+  fun `dispatchTask pauses partition reschedules task increments rateLimitedCounter and fires paused event`() {
     val task = task()
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
@@ -280,7 +301,7 @@ class OutboxControllerAdapterTests {
     assertThat(adapter.dispatchTask(partition)).isFalse()
     verify { partitionPort.pause(partition, "rate_limited", any()) }
     verify { taskPort.reschedule(task, any()) }
-    verify { partitionObserver.onPartitionPaused(partition) }
+    verify { partitionPausedEvents.fireAsync(match { it.partition == partition && it.reason == "rate_limited" }) }
     verify(exactly = 0) { archivePort.append(any()) }
     verify(exactly = 0) { taskPort.scheduleRetry(any(), any(), any()) }
     assertThat(meterRegistry.counter("outbox_tasks_rate_limited_total", "partition", partition.key).count()).isEqualTo(1.0)

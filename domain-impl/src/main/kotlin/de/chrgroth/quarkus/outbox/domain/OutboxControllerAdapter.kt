@@ -1,5 +1,11 @@
 package de.chrgroth.quarkus.outbox.domain
 
+import de.chrgroth.quarkus.outbox.domain.event.OutboxPartitionActivatedEvent
+import de.chrgroth.quarkus.outbox.domain.event.OutboxPartitionPausedEvent
+import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskDispatchedEvent
+import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskEnqueuedEvent
+import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskFailedEvent
+import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskRetryScheduledEvent
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
@@ -8,8 +14,7 @@ import io.micrometer.core.instrument.Counter
 import io.micrometer.core.instrument.Gauge
 import io.micrometer.core.instrument.MeterRegistry
 import jakarta.enterprise.context.ApplicationScoped
-import jakarta.enterprise.inject.Any
-import jakarta.enterprise.inject.Instance
+import jakarta.enterprise.event.Event
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import mu.KLogging
@@ -25,7 +30,12 @@ class OutboxControllerAdapter(
   private val coroutinesPort: CoroutinesPort,
   private val meterRegistry: MeterRegistry,
   private val applicationOutboxDispatcher: ApplicationOutboxDispatcher,
-  @param:Any private val partitionObservers: Instance<OutboxPartitionObserver>,
+  private val partitionActivatedEvents: Event<OutboxPartitionActivatedEvent>,
+  private val partitionPausedEvents: Event<OutboxPartitionPausedEvent>,
+  private val taskEnqueuedEvents: Event<OutboxTaskEnqueuedEvent>,
+  private val taskDispatchedEvents: Event<OutboxTaskDispatchedEvent>,
+  private val taskRetryScheduledEvents: Event<OutboxTaskRetryScheduledEvent>,
+  private val taskFailedEvents: Event<OutboxTaskFailedEvent>,
 ) {
 
   private val retryPolicy = RetryPolicy()
@@ -49,6 +59,7 @@ class OutboxControllerAdapter(
       enqueuedCounters.getOrPut(partition.key) {
         meterRegistry.counter("outbox_tasks_enqueued_total", "partition", partition.key)
       }.increment()
+      taskEnqueuedEvents.fireAsync(OutboxTaskEnqueuedEvent(partition, event.key, event.deduplicationKey, priority))
     }
     return inserted
   }
@@ -58,12 +69,12 @@ class OutboxControllerAdapter(
   fun activatePartition(partition: ApplicationOutboxPartition) {
     partitionPort.resume(partition)
     getOrCreatePartitionStatusGauge(partition).set(1)
-    partitionObservers.forEach { it.onPartitionActivated(partition) }
+    partitionActivatedEvents.fireAsync(OutboxPartitionActivatedEvent(partition))
   }
 
-  private fun pausePartition(partition: ApplicationOutboxPartition) {
+  private fun pausePartition(partition: ApplicationOutboxPartition, reason: String, pausedUntil: Instant?) {
     getOrCreatePartitionStatusGauge(partition).set(0)
-    partitionObservers.forEach { it.onPartitionPaused(partition) }
+    partitionPausedEvents.fireAsync(OutboxPartitionPausedEvent(partition, reason, pausedUntil))
   }
 
   private fun getOrCreatePartitionStatusGauge(partition: ApplicationOutboxPartition): AtomicInteger =
@@ -107,7 +118,7 @@ class OutboxControllerAdapter(
           val pausedUntil = Instant.now().plus(result.retryAfter)
           partitionPort.pause(partition, "rate_limited", pausedUntil)
           taskPort.reschedule(task, pausedUntil)
-          pausePartition(partition)
+          pausePartition(partition, "rate_limited", pausedUntil)
         } else {
           val nextRetryAt = Instant.now().plus(result.retryAfter)
           taskPort.reschedule(task, nextRetryAt)
@@ -147,14 +158,17 @@ class OutboxControllerAdapter(
   fun complete(task: OutboxTask) {
     archivePort.append(task)
     taskPort.delete(task)
+    taskDispatchedEvents.fireAsync(OutboxTaskDispatchedEvent(task))
   }
 
   fun fail(task: OutboxTask, error: String, nextRetryAt: Instant?) {
     if (nextRetryAt == null) {
       archivePort.appendFailed(task, error)
       taskPort.delete(task)
+      taskFailedEvents.fireAsync(OutboxTaskFailedEvent(task, error))
     } else {
       taskPort.scheduleRetry(task, error, nextRetryAt)
+      taskRetryScheduledEvents.fireAsync(OutboxTaskRetryScheduledEvent(task, error, nextRetryAt))
     }
   }
 
