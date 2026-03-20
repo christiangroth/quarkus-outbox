@@ -14,7 +14,7 @@
 | Prioritisation | Tasks carry `NORMAL` or `HIGH` priority; high-priority tasks are dispatched first |
 | Retry with backoff | Configurable retry policy with per-attempt backoff delays |
 | Observability | Micrometer metrics and slow-query detection built in |
-| Modularity | Clean hexagonal structure: domain-api → domain-impl ← adapter-out-persistence-mongodb |
+| Modularity | Clean hexagonal structure across five dedicated modules |
 
 ---
 
@@ -22,7 +22,7 @@
 
 - Requires Quarkus and a MongoDB instance.
 - Concurrency model is partition-based and coroutine-driven; one worker coroutine per partition.
-- The library is designed for embedding (not a standalone service); the application must provide an `OutboxTaskDispatcher` CDI bean.
+- The library is designed for embedding (not a standalone service); the application must provide an `ApplicationOutboxDispatcher` CDI bean.
 
 ---
 
@@ -30,15 +30,12 @@
 
 The following diagram shows Quarkus Outbox within its operational context.
 
-![System Context](https://kroki.io/c4plantuml/svg/eNpdkU1Ow0AMhfc5hdVVKlXiCi0_EiwQAbpHTmKC1WSm2J5QdtyBG3ISPP0JKrux5s333vMs1VAsDX1RGFtP8PypRgNcxWC0M_j5-obHhLJJCg_J6rgriopEYyibninYAmar7bbnBo1jmPl4z41EJRm5IUjKoQN7o-Pr2bw4OJRxP7v-HJ8JT9Qz1h6GRneAlnWL1rxl0sgIa8Gg2GQ_7I_PoEIzkjDxX252Vg4xdLGtc6h8ur7M9ByfXeJktSjYEbxGAUPdKGBoAcW9RjpH-Zo6ym19cB83Plxm4u16XcGqulvAQKoZWEvckCzAucoD9yhOK7zXtLWpPoX3RInKfde5y7LqdPtXQAhbvfgQNtJD1n_SKeBpXWVWZeCSQus__AtjJqxZ)
-
 **Interfaces:**
 
 | Interface | Direction | Description |
 |-----------|-----------|-------------|
-| `Outbox` (API) | inbound | Used by the application to enqueue events |
-| `OutboxTaskDispatcher` (API) | inbound | Implemented by the application; called per task dispatch |
-| `OutboxRepository` (SPI) | outbound | Persistence port; implemented by the MongoDB adapter |
+| `ApplicationOutboxClient` | inbound | Used by the application to enqueue events and query partition state |
+| `ApplicationOutboxDispatcher` | outbound | Implemented by the application; provides partitions and dispatches tasks |
 | MongoDB | outbound | Stores tasks, archives, and partition state |
 
 ---
@@ -47,11 +44,12 @@ The following diagram shows Quarkus Outbox within its operational context.
 
 | Decision | Rationale |
 |----------|-----------|
-| Hexagonal Architecture | Keeps domain logic independent of MongoDB; the adapter can be swapped |
+| Hexagonal Architecture | Keeps domain logic independent of MongoDB; adapters can be swapped |
 | Kotlin Coroutines | Non-blocking, lightweight partition workers without thread-per-partition overhead |
 | CONFLATED Channel | Signals are coalesced: many rapid enqueues produce only one dispatch cycle |
 | Atomic claim via MongoDB | `findOneAndUpdate(status=PENDING → PROCESSING)` prevents duplicate processing |
 | Partition-level pause | Rate limiting only affects the affected partition, not the whole system |
+| CDI async events | Fire-and-forget domain events for client applications to react to outbox lifecycle changes |
 
 ---
 
@@ -59,46 +57,102 @@ The following diagram shows Quarkus Outbox within its operational context.
 
 ### 5.1 Module Overview
 
-![Component Diagram](https://kroki.io/c4plantuml/svg/eNp1VMFu2zAMvecriJxaIMbuO7VxdsiALlk6YMdBkZlMiCxpopQ1GAbsH_aH-5JRSuzITnszqadH8fHRDxSED7HVk0lQQSPUtnXWoAmwUGLvRQv__vyFz1H4QyRYxbC1L_Bkm6iRJpPamiCUQf9tbqNphD_dCadmMG1sy_mKg-k9_JrAlffOZo7lTkhk4Jlxyl_KBPQpm4K1Vy2zweN6-R7Q_IgYGe28lUj0CV_CDEjtjdDT-wG5R2eH1BvOkArWn26LoCdFAY1EcNaHEVejyIkgv6MfMn4RdFj0Zzes3VFH-ftVmVTr9FWnFL0l1Bm46oNUo14sYY7CpO-V52dQ8CIgdQpZP4MWg1eSZmC3hP7IvY76K7AX-nWXyepofhlILYhySQ7bqtOk8khRB9Bqh_IkNY64f1p_wIKYTaaCsuZrzo9bqK3nZlmgaisIG3AdnPnTfPjGeMzSckenvsBztrHbXPLjAhskDARsdrZ44PkRMPnZ-27Ezc0IE11P_cj6qiPW5_RHux2TP7P-aR8aEGcoTyEaZfZvDr-1Zm_5pmiEY-dU3Hzlrmas8nmzvXFEzidD892n9P2axcunZdBiDslf2DKFyKraHdzczG_doB7YbrirPUty0hhauikSdpAiXe5mgeisMrC7FFpTue8X8HXwA7jP830nZFDHtAcXdD_KsnSDGgNepvrB8JL0-ELf8sag7wc0Df8v_wPcwNJs)
+| Module | Role |
+|--------|------|
+| `domain-api` | Public API: inbound/outbound ports, domain types, CDI event classes |
+| `domain-impl` | Domain logic: adapters for execution, archiving, and startup recovery |
+| `adapter-out-executor` | Coroutine infrastructure: `CoroutinesAdapter` implementing `CoroutinesPort` |
+| `adapter-in-scheduler` | Scheduler adapter: `ArchiverJob` for periodic archive cleanup |
+| `adapter-out-persistence-mongodb` | MongoDB persistence: repository adapters for tasks, archives, and partitions |
 
 ### 5.2 Key Components
 
 | Component | Module | Responsibility |
 |-----------|--------|----------------|
-| `Outbox` | domain-api | Primary inbound port: enqueue, processNext, signal |
-| `OutboxRepository` | domain-api | Outbound persistence port |
-| `OutboxTaskDispatcher` | domain-api | Outbound dispatch port (implemented by the application) |
-| `OutboxImpl` | domain-impl | CDI bean; orchestrates processor, metrics, and partition observers |
-| `OutboxProcessor` | domain-impl | Stateless claim-dispatch-result lifecycle |
-| `OutboxPartitionWorker` | domain-impl | One coroutine worker per partition; listens to CONFLATED channel |
-| `OutboxWakeupService` | domain-impl | Manages per-partition `Channel<Unit>` for wakeup signals |
-| `OutboxStartupRecovery` | domain-impl | Resets stale `PROCESSING` tasks and restores partition states at startup |
-| `OutboxArchiveCleanupJob` | domain-impl | Scheduled daily job that prunes old archive entries |
-| `MongoOutboxRepository` | adapter-out-persistence-mongodb | MongoDB implementation of `OutboxRepository` |
-| `OutboxIndexInitializer` | adapter-out-persistence-mongodb | Creates/syncs required MongoDB indexes on startup |
-| `OutboxQueryMetrics` | adapter-out-persistence-mongodb | Wraps repository calls with Micrometer timers and slow-query counters |
+| `ApplicationOutboxClient` | domain-api | Inbound port: enqueue events, query partition infos |
+| `ApplicationOutboxDispatcher` | domain-api | Outbound port: provide partitions, dispatch tasks |
+| `ApplicationOutboxClientAdapter` | domain-impl | Implements `ApplicationOutboxClient`; delegates to `OutboxControllerAdapter` |
+| `OutboxControllerAdapter` | domain-impl | Orchestrates enqueue, dispatch, partition activation, metrics, and CDI events |
+| `ArchiverAdapter` | domain-impl | Implements `ArchiverPort`; delegates archive cleanup to persistence port |
+| `PartitionWorkerStarter` | domain-impl | Startup recovery + one coroutine worker per partition |
+| `CoroutinesAdapter` | adapter-out-executor | Manages the coroutine scope and per-partition `CONFLATED` channels |
+| `ArchiverJob` | adapter-in-scheduler | Scheduled daily job that prunes old archive entries via `ArchiverPort` |
+| `TaskRepositoryAdapter` | adapter-out-persistence-mongodb | MongoDB operations for outbox tasks |
+| `ArchivedTaskRepositoryAdapter` | adapter-out-persistence-mongodb | MongoDB operations for archived tasks |
+| `PartitionRepository` | adapter-out-persistence-mongodb | MongoDB operations for partition state |
+| `IndexInitializationStarter` | adapter-out-persistence-mongodb | Creates/syncs required MongoDB indexes on startup |
+| `MetricsRecorder` | adapter-out-persistence-mongodb | Wraps repository calls with Micrometer timers and slow-query counters |
+
+### 5.3 Ports
+
+**Inbound ports** (in `domain-api` / `domain-impl`, package `port.in`):
+
+| Port | Description |
+|------|-------------|
+| `ApplicationOutboxClient` | Application-facing API for enqueueing events and querying partitions |
+| `ArchiverPort` | Trigger archive cleanup (used by `ArchiverJob`) |
+
+**Outbound ports** (in `domain-impl`, package `port.out`):
+
+| Port | Description |
+|------|-------------|
+| `ApplicationOutboxDispatcher` | Implemented by the application; provides partitions and dispatches tasks |
+| `CoroutinesPort` | Coroutine scope, per-partition signals |
+| `TaskRepositoryPort` | CRUD and lifecycle operations on outbox tasks |
+| `ArchivedTaskRepositoryPort` | Append and cleanup of archived tasks |
+| `PartitionRepositoryPort` | Find, create, pause, and resume partition records |
 
 ---
 
-## 6. Runtime View
+## 6. CDI Events
 
-### 6.1 Enqueue and Dispatch Flow
+The following fire-and-forget events are published asynchronously for client applications to observe:
 
-![Enqueue and Dispatch Sequence](https://kroki.io/plantuml/svg/eNqVVMtuwjAQvPsr9lQlEvQDemip2iJVqtoKKnFewgIWju3aGx5_3w3hkUCo4JBIWe_MzoxXUb3IGLjIjWLNhuDN_hZUENzBq44eOZtD37iVUl7adKY9WoYXo8lyo_RV8Nit33NvWsoD8i5qdmHTcjjCBRV-SGGpM2o5_y4rrJ0dubCg0NLxg3GxVysNqpIH3ceaKngAqqwlfk_YAVpKYwc8bozDSapq_Qf0UfwtHDVU91QIBwk40TZSYLowtZGKYKKeWTTHuU2UwHamK3al2liOQk4yFVQ2R2vJ3AfKSC8pSZVxzsNqrmUpWAKOgEvUBseGFFygOTXqg8soxk9acz2xye6u0gPRP4lnBnVe9w1wRcIi-AJ5c1mkd68mKUElPRqGYZGVyuUL2nFnI88R_5lyckZMh5lkIsEAmT50rmUpbhhcQyWBOGyep0whvU5IoCisk8JUUjpQMfCVcI9FpMMWNG9pa6kvK3OTmwqQ5BIlzuhKGVMB7fTvgB2wsnSDyszTVo6dqPLpyav83f0BLY3ECA==)
+| Event | Fired when |
+|-------|------------|
+| `OutboxPartitionActivatedEvent` | A partition transitions to active |
+| `OutboxPartitionPausedEvent` | A partition is paused (includes `reason` and `pausedUntil`) |
+| `OutboxTaskEnqueuedEvent` | A task is successfully enqueued (not fired on deduplication discard) |
+| `OutboxTaskDispatchedEvent` | A task is dispatched successfully and archived |
+| `OutboxTaskRetryScheduledEvent` | A task fails but will be retried |
+| `OutboxTaskFailedEvent` | A task permanently fails after exhausting all retries |
 
-### 6.2 Startup Recovery
+All events carry `partition: ApplicationOutboxPartition` and `eventType: String`.
 
-On every application start, `OutboxStartupRecovery` (with `@Priority(1)`) runs **before** `OutboxPartitionWorker`:
+---
 
-1. Calls `outbox.resetStaleProcessingTasks()` – resets any tasks left in `PROCESSING` status from a previous crash back to `PENDING`.
-2. For each partition registered in `OutboxTaskDispatcher.partitions`:
-   - If the partition has no persisted state **or** is `ACTIVE` → `activatePartition` + `signal`.
-   - If the partition is `PAUSED` and `pausedUntil` is in the past / null → `activatePartition` + `signal`.
-   - If the partition is `PAUSED` and `pausedUntil` is in the future → schedule a delayed coroutine to activate later.
+## 7. Runtime View
 
-### 6.3 Rate Limiting
+### 7.1 Enqueue and Dispatch Flow
 
-When an `OutboxTaskDispatcher.dispatch` call returns `OutboxTaskResult.RateLimited(retryAfter)`:
+1. Application calls `ApplicationOutboxClient.enqueue(event)`.
+2. `ApplicationOutboxClientAdapter` delegates to `OutboxControllerAdapter.enqueue()`.
+3. `OutboxControllerAdapter` calls `TaskRepositoryPort.enqueue()`. If the task is a duplicate it is silently discarded; otherwise the `CoroutinesPort` is signalled and `OutboxTaskEnqueuedEvent` is fired.
+4. The `PartitionWorkerStarter` coroutine loop wakes up and calls `OutboxControllerAdapter.dispatchTask()` repeatedly until no task remains.
+5. `OutboxControllerAdapter` claims a task via `TaskRepositoryPort.claim()`, calls `ApplicationOutboxDispatcher.dispatch()`, and handles the result:
+   - **Success** → archives via `ArchivedTaskRepositoryPort.append()`, deletes the task, fires `OutboxTaskDispatchedEvent`.
+   - **RateLimited** → reschedules the task, optionally pauses the partition, fires `OutboxPartitionPausedEvent`, schedules delayed reactivation.
+   - **Failed** → retries with backoff (fires `OutboxTaskRetryScheduledEvent`) or archives as permanently failed (fires `OutboxTaskFailedEvent`).
+
+### 7.2 Startup Recovery
+
+On every application start, `PartitionWorkerStarter.onStart()` (with `@Priority(1)`):
+
+1. Calls `OutboxControllerAdapter.resetStaleProcessingTasks()` – resets any tasks left in `PROCESSING` status from a previous crash back to `PENDING`.
+2. For each partition returned by `ApplicationOutboxDispatcher.getAllPartitions()`:
+   - If `ACTIVE` → `activatePartition` + `signal`.
+   - If `PAUSED` and `pausedUntil` is `null` → leaves partition paused (manual pause).
+   - If `PAUSED` and `pausedUntil` has passed → immediately reactivates.
+   - If `PAUSED` and `pausedUntil` is in the future → schedules a delayed coroutine to reactivate later.
+3. Starts one coroutine worker per partition.
+
+### 7.3 Archive Cleanup
+
+`ArchiverJob` runs daily at 01:00 UTC. It calls `ArchiverPort.deleteOlderThan(cutoff)` where `cutoff = now - outbox.archive.retention-days`. The `ArchiverAdapter` delegates to `ArchivedTaskRepositoryPort.deleteOlderThan()`.
+
+### 7.4 Rate Limiting
+
+When `ApplicationOutboxDispatcher.dispatch()` returns `DispatchResult.RateLimited(retryAfter)`:
 
 - The task is rescheduled with `nextRetryAt = now + retryAfter`.
 - **If `partition.pauseOnRateLimit == true`**: the partition is persisted as `PAUSED`, the gauge is set to `0`, and a coroutine schedules `activatePartition + signal` after `retryAfter`.
@@ -106,14 +160,14 @@ When an `OutboxTaskDispatcher.dispatch` call returns `OutboxTaskResult.RateLimit
 
 ---
 
-## 7. Deployment View
+## 8. Deployment View
 
 Quarkus Outbox is a set of JARs added as Gradle/Maven dependencies. The consuming application:
 
-1. Adds `domain-api`, `domain-impl`, and `adapter-out-persistence-mongodb` as dependencies.
-2. Provides a CDI bean implementing `OutboxTaskDispatcher`.
+1. Adds `domain-api`, `domain-impl`, `adapter-out-executor`, `adapter-out-persistence-mongodb`, and optionally `adapter-in-scheduler` as dependencies.
+2. Provides a CDI bean implementing `ApplicationOutboxDispatcher`.
 3. Ensures a MongoDB instance is reachable (configured via Quarkus standard properties).
-4. Sets `app.outbox.archive-retention-days` in `application.properties`.
+4. Sets `outbox.archive.retention-days` in `application.properties` when using `adapter-in-scheduler`.
 
 MongoDB collections created automatically:
 
@@ -125,11 +179,11 @@ MongoDB collections created automatically:
 
 ---
 
-## 8. Cross-Cutting Concepts
+## 9. Cross-Cutting Concepts
 
 ### Retry Policy
 
-Configured via `RetryPolicy` (injectable or default). Default:
+Configured via `RetryPolicy` (default in `domain-impl`). Default:
 
 | Attempt | Delay before retry |
 |---------|--------------------|
@@ -153,11 +207,11 @@ Configured via `RetryPolicy` (injectable or default). Default:
 
 ### Deduplication
 
-Before inserting a task, `MongoOutboxRepository.enqueue` checks for an existing `PENDING` or `PROCESSING` task with the same `(partition, deduplicationKey)`. If one exists, the insert is skipped and `false` is returned.
+Before inserting a task, `TaskRepositoryAdapter.enqueue` checks for an existing `PENDING` or `PROCESSING` task with the same `(partition, deduplicationKey)`. If one exists, the insert is skipped and `false` is returned.
 
 ---
 
-## 9. Architecture Decisions
+## 10. Architecture Decisions
 
 | ID | Decision | Rationale |
 |----|----------|-----------|
@@ -165,16 +219,18 @@ Before inserting a task, `MongoOutboxRepository.enqueue` checks for an existing 
 | ADR-2 | Partition-based workers | Isolation between event streams; independent rate-limit handling |
 | ADR-3 | CONFLATED channel for wakeup | Prevents channel overflow under high enqueue rates |
 | ADR-4 | Atomic claim in MongoDB | Single `findOneAndUpdate` call ensures no two workers process the same task |
-| ADR-5 | Sealed `OutboxTaskResult` | Exhaustive dispatch result handling enforced by the compiler |
+| ADR-5 | Sealed `DispatchResult` | Exhaustive dispatch result handling enforced by the compiler |
+| ADR-6 | CDI async events | Decoupled lifecycle notifications; applications observe only the events they care about |
+| ADR-7 | Hexagonal modules | Each module has a single clear responsibility; adapters are interchangeable |
 
 ---
 
-## 10. Quality Requirements
+## 11. Quality Requirements
 
 | Requirement | Mechanism |
 |-------------|-----------|
 | Reliability | At-least-once delivery, startup recovery of stale tasks |
 | No duplicate processing | Atomic MongoDB claim, deduplication key |
-| Observability | Micrometer counters/gauges, slow-query detection |
-| Code quality | Detekt static analysis, Kover ≥ 40% coverage gate |
+| Observability | Micrometer counters/gauges, slow-query detection, CDI lifecycle events |
+| Code quality | Detekt static analysis, Kover coverage gate |
 | Maintainability | Hexagonal architecture, Kotlin coroutines, modular Gradle build |
