@@ -4,7 +4,7 @@ plugins {
 }
 
 dependencies {
-  api(project(":domain-api"))
+  api(project(":domain-impl"))
 
   implementation(platform(libs.quarkusBom))
   implementation("io.quarkus:quarkus-micrometer")
