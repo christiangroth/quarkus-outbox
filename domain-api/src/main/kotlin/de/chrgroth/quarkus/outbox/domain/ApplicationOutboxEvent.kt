@@ -7,6 +7,10 @@ package de.chrgroth.quarkus.outbox.domain
  * The outbox framework uses [partition] to route the event, [priority] for ordering,
  * [deduplicationKey] to prevent duplicate processing, and [serializePayload] as the
  * serialized event payload.
+ *
+ * Use an [OutboxPayloadSerializer] to convert your typed payload to [serializePayload].
+ * When the event is dispatched by the framework, the stored payload is available via
+ * [OutboxDispatchEvent.payload] and can be decoded using an [OutboxPayloadDeserializer].
  */
 interface ApplicationOutboxEvent {
 

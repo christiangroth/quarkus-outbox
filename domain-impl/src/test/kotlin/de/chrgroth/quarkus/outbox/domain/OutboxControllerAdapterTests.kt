@@ -226,9 +226,9 @@ class OutboxControllerAdapterTests {
   }
 
   @Test
-  fun `dispatchTask passes ApplicationOutboxEvent with task fields to dispatcher`() {
+  fun `dispatchTask passes OutboxDispatchEvent with task fields to dispatcher`() {
     val task = task()
-    val capturedEvent = slot<ApplicationOutboxEvent>()
+    val capturedEvent = slot<OutboxDispatchEvent>()
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
     every { applicationOutboxDispatcher.dispatch(capture(capturedEvent)) } returns DispatchResult.Success
@@ -237,11 +237,11 @@ class OutboxControllerAdapterTests {
 
     adapter.dispatchTask(partition)
 
-    assertThat(capturedEvent.captured.key).isEqualTo(task.eventType)
+    assertThat(capturedEvent.captured.eventType).isEqualTo(task.eventType)
     assertThat(capturedEvent.captured.partition).isEqualTo(partition)
     assertThat(capturedEvent.captured.priority).isEqualTo(task.priority)
     assertThat(capturedEvent.captured.deduplicationKey).isEqualTo(task.deduplicationKey)
-    assertThat(capturedEvent.captured.serializePayload).isEqualTo(task.payload)
+    assertThat(capturedEvent.captured.payload).isEqualTo(task.payload)
   }
 
   @Test
