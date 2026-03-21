@@ -84,7 +84,7 @@ class OutboxControllerAdapterTests {
     createdAt = Instant.now(),
     updatedAt = Instant.now(),
     nextRetryAt = null,
-    priority = OutboxTaskPriority.NORMAL,
+    priority = OutboxEventPriority.NORMAL,
     lastError = null,
   )
 
@@ -92,7 +92,7 @@ class OutboxControllerAdapterTests {
   private fun testEvent() = object : ApplicationOutboxEvent {
     override val key = "TEST_EVENT"
     override val partition = this@OutboxControllerAdapterTests.partition
-    override val priority = OutboxTaskPriority.NORMAL
+    override val priority = OutboxEventPriority.NORMAL
     override val deduplicationKey = "dedup-key"
     override val serializePayload = "{}"
   }
@@ -115,7 +115,7 @@ class OutboxControllerAdapterTests {
     val event = testEvent()
     every { taskPort.enqueue(partition, any(), any(), any()) } returns true
 
-    val result = adapter.enqueue(partition, event, "payload", OutboxTaskPriority.NORMAL)
+    val result = adapter.enqueue(partition, event, "payload", OutboxEventPriority.NORMAL)
 
     assertThat(result).isTrue()
     verify { coroutinesPort.signal(partition) }
@@ -127,7 +127,7 @@ class OutboxControllerAdapterTests {
   fun `enqueue does not signal or increment counter when task is rejected due to deduplication`() {
     every { taskPort.enqueue(partition, any(), any(), any()) } returns false
 
-    val result = adapter.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.NORMAL)
+    val result = adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.NORMAL)
 
     assertThat(result).isFalse()
     verify(exactly = 0) { coroutinesPort.signal(any()) }
@@ -137,11 +137,11 @@ class OutboxControllerAdapterTests {
 
   @Test
   fun `enqueue passes priority to repository`() {
-    every { taskPort.enqueue(partition, any(), any(), OutboxTaskPriority.HIGH) } returns true
+    every { taskPort.enqueue(partition, any(), any(), OutboxEventPriority.HIGH) } returns true
 
-    adapter.enqueue(partition, testEvent(), "payload", OutboxTaskPriority.HIGH)
+    adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.HIGH)
 
-    verify { taskPort.enqueue(partition, any(), any(), OutboxTaskPriority.HIGH) }
+    verify { taskPort.enqueue(partition, any(), any(), OutboxEventPriority.HIGH) }
   }
 
   // --- activatePartition ---

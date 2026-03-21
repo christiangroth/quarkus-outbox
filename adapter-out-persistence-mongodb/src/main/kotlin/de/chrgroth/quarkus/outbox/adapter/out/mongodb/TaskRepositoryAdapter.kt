@@ -8,7 +8,7 @@ import com.mongodb.client.model.Updates
 import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxEvent
 import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxTask
-import de.chrgroth.quarkus.outbox.domain.OutboxTaskPriority
+import de.chrgroth.quarkus.outbox.domain.OutboxEventPriority
 import de.chrgroth.quarkus.outbox.domain.OutboxTaskStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.TaskRepositoryPort
 import io.quarkus.mongodb.panache.kotlin.PanacheMongoRepositoryBase
@@ -58,7 +58,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
     partition: ApplicationOutboxPartition,
     event: ApplicationOutboxEvent,
     payload: String,
-    priority: OutboxTaskPriority,
+    priority: OutboxEventPriority,
   ): Boolean {
     val deduplicationKey = event.deduplicationKey
     val existing = metricsRecorder.timed("outbox.task.dedupCheck") {
@@ -160,7 +160,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
     createdAt = createdAt,
     updatedAt = updatedAt,
     nextRetryAt = nextRetryAt,
-    priority = OutboxTaskPriority.valueOf(priority),
+    priority = OutboxEventPriority.valueOf(priority),
     lastError = lastError,
   )
 

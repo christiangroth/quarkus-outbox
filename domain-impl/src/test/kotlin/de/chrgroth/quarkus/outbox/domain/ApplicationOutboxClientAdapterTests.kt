@@ -20,7 +20,7 @@ class ApplicationOutboxClientAdapterTests {
   private val event = object : ApplicationOutboxEvent {
     override val key = "TEST_EVENT"
     override val partition = this@ApplicationOutboxClientAdapterTests.partition
-    override val priority = OutboxTaskPriority.NORMAL
+    override val priority = OutboxEventPriority.NORMAL
     override val deduplicationKey = "dedup-1"
     override val serializePayload = """{"data":"value"}"""
   }
@@ -39,15 +39,15 @@ class ApplicationOutboxClientAdapterTests {
     val highPriorityEvent = object : ApplicationOutboxEvent {
       override val key = "HIGH_EVENT"
       override val partition = this@ApplicationOutboxClientAdapterTests.partition
-      override val priority = OutboxTaskPriority.HIGH
+      override val priority = OutboxEventPriority.HIGH
       override val deduplicationKey = "dedup-high"
       override val serializePayload = "{}"
     }
-    every { controllerAdapter.enqueue(partition, highPriorityEvent, "{}", OutboxTaskPriority.HIGH) } returns true
+    every { controllerAdapter.enqueue(partition, highPriorityEvent, "{}", OutboxEventPriority.HIGH) } returns true
 
     clientAdapter.enqueue(highPriorityEvent)
 
-    verify { controllerAdapter.enqueue(partition, highPriorityEvent, "{}", OutboxTaskPriority.HIGH) }
+    verify { controllerAdapter.enqueue(partition, highPriorityEvent, "{}", OutboxEventPriority.HIGH) }
   }
 
   @Test

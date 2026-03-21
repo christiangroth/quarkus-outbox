@@ -51,7 +51,7 @@ class OutboxControllerAdapter(
     partition: ApplicationOutboxPartition,
     event: ApplicationOutboxEvent,
     payload: String,
-    priority: OutboxTaskPriority,
+    priority: OutboxEventPriority,
   ): Boolean {
     val inserted = taskPort.enqueue(partition, event, payload, priority)
     if (inserted) {

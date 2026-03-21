@@ -1,6 +1,14 @@
 package de.chrgroth.quarkus.outbox.domain
 
 /**
+ * Dispatch priority for outbox events. Higher-priority events are processed before normal ones.
+ */
+enum class OutboxEventPriority {
+  NORMAL,
+  HIGH,
+}
+
+/**
  * Marker interface for domain events that can be stored in the outbox.
  *
  * Implement this interface in your application to define event types.
@@ -21,7 +29,7 @@ interface ApplicationOutboxEvent {
   val partition: ApplicationOutboxPartition
 
   /** The dispatch priority for this event. */
-  val priority: OutboxTaskPriority
+  val priority: OutboxEventPriority
 
   /** A key used to detect and discard duplicate events within the same partition. */
   val deduplicationKey: String
