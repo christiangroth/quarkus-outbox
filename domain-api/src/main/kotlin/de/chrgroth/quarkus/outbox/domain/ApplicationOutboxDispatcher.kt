@@ -3,11 +3,13 @@ package de.chrgroth.quarkus.outbox.domain
 import java.time.Duration
 
 /**
- * Outbound port implemented by the application to provide partition configuration
- * and to handle outbound dispatching of queued tasks.
+ * Outbound port implemented by the application to provide partition configuration,
+ * payload deserialization, and outbound dispatching of queued events.
  *
- * The outbox framework calls [getAllPartitions] at startup to discover all known partitions,
- * and calls [dispatch] for each [OutboxTask] that is ready to be processed.
+ * The outbox framework calls [getAllPartitions] at startup to discover all known partitions.
+ * For each event ready to be processed, the framework first calls [deserialize] to
+ * reconstruct the [ApplicationOutboxEvent] from stored data, then calls [dispatch] with
+ * the result.
  */
 interface ApplicationOutboxDispatcher {
 
@@ -17,14 +19,20 @@ interface ApplicationOutboxDispatcher {
   fun getAllPartitions(): List<ApplicationOutboxPartition>
 
   /**
-   * Dispatches the given [task] to its target destination.
+   * Reconstructs an [ApplicationOutboxEvent] from the stored [partition], [eventType] and
+   * serialized [payload]. The returned event is passed directly to [dispatch].
+   */
+  fun deserialize(partition: ApplicationOutboxPartition, eventType: String, payload: String): ApplicationOutboxEvent
+
+  /**
+   * Dispatches the given [event] to its target destination.
    * Returns a [DispatchResult] indicating success, rate-limiting, or failure.
    */
-  fun dispatch(task: OutboxTask): DispatchResult
+  fun dispatch(event: ApplicationOutboxEvent): DispatchResult
 }
 
 /**
- * The result of dispatching an [OutboxTask].
+ * The result of dispatching an [ApplicationOutboxEvent].
  */
 sealed interface DispatchResult {
 

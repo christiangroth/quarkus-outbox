@@ -19,31 +19,23 @@ data class OutboxTask(
     val createdAt: Instant,
     val updatedAt: Instant,
     val nextRetryAt: Instant?,
-    val priority: OutboxTaskPriority,
+    val priority: OutboxEventPriority,
     val lastError: String?,
 )
-
-/**
- * Dispatch priority for outbox tasks. Higher-priority tasks are processed before normal ones.
- */
-enum class OutboxTaskPriority {
-    NORMAL,
-    HIGH,
-}
 
 /**
  * Possible lifecycle states of an outbox task.
  */
 enum class OutboxTaskStatus {
-    /** Waiting to be claimed for dispatch. */
-    PENDING,
+  /** Waiting to be claimed for dispatch. */
+  PENDING,
 
-    /** Currently being dispatched. */
-    PROCESSING,
+  /** Currently being dispatched. */
+  PROCESSING,
 
-    /** Successfully dispatched and archived. */
-    DONE,
+  /** Successfully dispatched and archived. */
+  DONE,
 
-    /** Dispatch failed and the task has been moved to the archive after exhausting retries. */
-    FAILED,
+  /** Dispatch failed and the task has been moved to the archive after exhausting retries. */
+  FAILED,
 }

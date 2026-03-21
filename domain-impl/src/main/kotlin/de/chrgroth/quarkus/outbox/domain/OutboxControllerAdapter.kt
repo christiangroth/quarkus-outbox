@@ -51,7 +51,7 @@ class OutboxControllerAdapter(
     partition: ApplicationOutboxPartition,
     event: ApplicationOutboxEvent,
     payload: String,
-    priority: OutboxTaskPriority,
+    priority: OutboxEventPriority,
   ): Boolean {
     val inserted = taskPort.enqueue(partition, event, payload, priority)
     if (inserted) {
@@ -104,7 +104,8 @@ class OutboxControllerAdapter(
     val task = taskPort.claim(partition)
       ?: return false
 
-    return when (val result = applicationOutboxDispatcher.dispatch(task)) {
+    val event = applicationOutboxDispatcher.deserialize(partition, task.eventType, task.payload)
+    return when (val result = applicationOutboxDispatcher.dispatch(event)) {
       is DispatchResult.Success -> {
         complete(task, partition)
         processedCounters.getOrPut(partition.key) {
