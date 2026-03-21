@@ -104,7 +104,14 @@ class OutboxControllerAdapter(
     val task = taskPort.claim(partition)
       ?: return false
 
-    return when (val result = applicationOutboxDispatcher.dispatch(task)) {
+    val event = OutboxEvent(
+      eventType = task.eventType,
+      partition = task.partition,
+      payload = task.payload,
+      priority = task.priority,
+      deduplicationKey = task.deduplicationKey,
+    )
+    return when (val result = applicationOutboxDispatcher.dispatch(event)) {
       is DispatchResult.Success -> {
         complete(task, partition)
         processedCounters.getOrPut(partition.key) {

@@ -4,10 +4,10 @@ import java.time.Duration
 
 /**
  * Outbound port implemented by the application to provide partition configuration
- * and to handle outbound dispatching of queued tasks.
+ * and to handle outbound dispatching of queued events.
  *
  * The outbox framework calls [getAllPartitions] at startup to discover all known partitions,
- * and calls [dispatch] for each [OutboxTask] that is ready to be processed.
+ * and calls [dispatch] for each [OutboxEvent] that is ready to be processed.
  */
 interface ApplicationOutboxDispatcher {
 
@@ -17,14 +17,14 @@ interface ApplicationOutboxDispatcher {
   fun getAllPartitions(): List<ApplicationOutboxPartition>
 
   /**
-   * Dispatches the given [task] to its target destination.
+   * Dispatches the given [event] to its target destination.
    * Returns a [DispatchResult] indicating success, rate-limiting, or failure.
    */
-  fun dispatch(task: OutboxTask): DispatchResult
+  fun dispatch(event: OutboxEvent): DispatchResult
 }
 
 /**
- * The result of dispatching an [OutboxTask].
+ * The result of dispatching an [OutboxEvent].
  */
 sealed interface DispatchResult {
 
