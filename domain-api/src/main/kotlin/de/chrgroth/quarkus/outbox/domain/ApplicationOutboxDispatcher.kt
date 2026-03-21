@@ -7,7 +7,7 @@ import java.time.Duration
  * and to handle outbound dispatching of queued events.
  *
  * The outbox framework calls [getAllPartitions] at startup to discover all known partitions,
- * and calls [dispatch] for each [OutboxEvent] that is ready to be processed.
+ * and calls [dispatch] for each [ApplicationOutboxEvent] that is ready to be processed.
  */
 interface ApplicationOutboxDispatcher {
 
@@ -20,11 +20,11 @@ interface ApplicationOutboxDispatcher {
    * Dispatches the given [event] to its target destination.
    * Returns a [DispatchResult] indicating success, rate-limiting, or failure.
    */
-  fun dispatch(event: OutboxEvent): DispatchResult
+  fun dispatch(event: ApplicationOutboxEvent): DispatchResult
 }
 
 /**
- * The result of dispatching an [OutboxEvent].
+ * The result of dispatching an [ApplicationOutboxEvent].
  */
 sealed interface DispatchResult {
 

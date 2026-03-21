@@ -104,13 +104,13 @@ class OutboxControllerAdapter(
     val task = taskPort.claim(partition)
       ?: return false
 
-    val event = OutboxEvent(
-      eventType = task.eventType,
-      partition = task.partition,
-      payload = task.payload,
-      priority = task.priority,
-      deduplicationKey = task.deduplicationKey,
-    )
+    val event = object : ApplicationOutboxEvent {
+      override val key = task.eventType
+      override val partition = partition
+      override val priority = task.priority
+      override val deduplicationKey = task.deduplicationKey
+      override val serializePayload = task.payload
+    }
     return when (val result = applicationOutboxDispatcher.dispatch(event)) {
       is DispatchResult.Success -> {
         complete(task, partition)

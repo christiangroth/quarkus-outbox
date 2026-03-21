@@ -15,6 +15,7 @@ import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
 import io.mockk.runs
+import io.mockk.slot
 import io.mockk.verify
 import jakarta.enterprise.event.Event
 import kotlinx.coroutines.CoroutineScope
@@ -88,13 +89,6 @@ class OutboxControllerAdapterTests {
     lastError = null,
   )
 
-  private fun outboxEvent(partitionKey: String = partition.key) = OutboxEvent(
-    eventType = "TEST_EVENT",
-    partition = partitionKey,
-    payload = """{"foo":"bar"}""",
-    priority = OutboxTaskPriority.NORMAL,
-    deduplicationKey = "dedup-1",
-  )
 
   private fun testEvent() = object : ApplicationOutboxEvent {
     override val key = "TEST_EVENT"
@@ -181,7 +175,7 @@ class OutboxControllerAdapterTests {
     val task = task()
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
-    every { applicationOutboxDispatcher.dispatch(outboxEvent()) } returns DispatchResult.RateLimited(Duration.ofSeconds(30))
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.RateLimited(Duration.ofSeconds(30))
     every { partitionPort.pause(partition, "rate_limited", any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
     every { partitionPort.resume(partition) } just runs
@@ -220,7 +214,7 @@ class OutboxControllerAdapterTests {
     val task = task()
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
-    every { applicationOutboxDispatcher.dispatch(outboxEvent()) } returns DispatchResult.Success
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Success
     every { archivePort.append(task) } just runs
     every { taskPort.delete(task) } just runs
 
@@ -232,11 +226,30 @@ class OutboxControllerAdapterTests {
   }
 
   @Test
+  fun `dispatchTask passes ApplicationOutboxEvent with task fields to dispatcher`() {
+    val task = task()
+    val capturedEvent = slot<ApplicationOutboxEvent>()
+    every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
+    every { taskPort.claim(partition) } returns task
+    every { applicationOutboxDispatcher.dispatch(capture(capturedEvent)) } returns DispatchResult.Success
+    every { archivePort.append(task) } just runs
+    every { taskPort.delete(task) } just runs
+
+    adapter.dispatchTask(partition)
+
+    assertThat(capturedEvent.captured.key).isEqualTo(task.eventType)
+    assertThat(capturedEvent.captured.partition).isEqualTo(partition)
+    assertThat(capturedEvent.captured.priority).isEqualTo(task.priority)
+    assertThat(capturedEvent.captured.deduplicationKey).isEqualTo(task.deduplicationKey)
+    assertThat(capturedEvent.captured.serializePayload).isEqualTo(task.payload)
+  }
+
+  @Test
   fun `dispatchTask schedules retry and increments failedCounter when below maxAttempts`() {
     val task = task(attempts = 0)
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
-    every { applicationOutboxDispatcher.dispatch(outboxEvent()) } returns DispatchResult.Failed("dispatch failed")
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Failed("dispatch failed")
     val capturedNextRetryAt = mutableListOf<Instant>()
     every { taskPort.scheduleRetry(task, any(), capture(capturedNextRetryAt)) } just runs
 
@@ -251,7 +264,7 @@ class OutboxControllerAdapterTests {
     val task = task(attempts = 4)
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
-    every { applicationOutboxDispatcher.dispatch(outboxEvent()) } returns DispatchResult.Failed("permanent failure")
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Failed("permanent failure")
     every { archivePort.appendFailed(task, "permanent failure") } just runs
     every { taskPort.delete(task) } just runs
 
@@ -267,7 +280,7 @@ class OutboxControllerAdapterTests {
     val task = task(attempts = 1)
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
-    every { applicationOutboxDispatcher.dispatch(outboxEvent()) } returns DispatchResult.Failed("fail")
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Failed("fail")
     val capturedNextRetryAt = mutableListOf<Instant>()
     every { taskPort.scheduleRetry(task, any(), capture(capturedNextRetryAt)) } just runs
 
@@ -285,7 +298,7 @@ class OutboxControllerAdapterTests {
     val task = task(attempts = 3)
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
-    every { applicationOutboxDispatcher.dispatch(outboxEvent()) } returns DispatchResult.Failed("fail")
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Failed("fail")
     val capturedNextRetryAt = mutableListOf<Instant>()
     every { taskPort.scheduleRetry(task, any(), capture(capturedNextRetryAt)) } just runs
 
@@ -301,7 +314,7 @@ class OutboxControllerAdapterTests {
     val task = task()
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
-    every { applicationOutboxDispatcher.dispatch(outboxEvent()) } returns DispatchResult.RateLimited(Duration.ofSeconds(30))
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.RateLimited(Duration.ofSeconds(30))
     every { partitionPort.pause(partition, "rate_limited", any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
     every { partitionPort.resume(partition) } just runs
@@ -329,7 +342,7 @@ class OutboxControllerAdapterTests {
     // second dispatchTask call's partition status check which should return paused.
     every { partitionPort.findOrCreate(partition) } returnsMany listOf(activePartitionInfo(), activePartitionInfo(), pausedInfo)
     every { taskPort.claim(partition) } returns task
-    every { applicationOutboxDispatcher.dispatch(outboxEvent()) } returns DispatchResult.RateLimited(Duration.ofSeconds(30))
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.RateLimited(Duration.ofSeconds(30))
     every { partitionPort.pause(partition, "rate_limited", any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
     every { partitionPort.resume(partition) } just runs
@@ -345,7 +358,7 @@ class OutboxControllerAdapterTests {
     val task = task()
     every { partitionPort.findOrCreate(noPausePartition) } returns activePartitionInfo(noPausePartition.key)
     every { taskPort.claim(noPausePartition) } returns task
-    every { applicationOutboxDispatcher.dispatch(outboxEvent()) } returns DispatchResult.RateLimited(Duration.ofSeconds(30))
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.RateLimited(Duration.ofSeconds(30))
     val capturedNextRetryAt = mutableListOf<Instant>()
     every { taskPort.reschedule(task, capture(capturedNextRetryAt)) } just runs
 
