@@ -1,3 +1,12 @@
+# 0.4.0 (2026.03.21)
+
+## New Features
+* The dispatcher now receives an `ApplicationOutboxEvent` instead of the internal `OutboxTask`, keeping task tracking details internal to the framework.
+* Serialization of the event payload is defined via `ApplicationOutboxEvent.serializePayload`; deserialization is handled by the new `ApplicationOutboxDispatcher.deserialize` method.
+
+
+
+---
 # 0.3.1 (2026.03.21)
 
 ## Bugfixes / Chore
