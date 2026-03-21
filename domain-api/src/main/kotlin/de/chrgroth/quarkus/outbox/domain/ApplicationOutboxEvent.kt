@@ -8,9 +8,9 @@ package de.chrgroth.quarkus.outbox.domain
  * [deduplicationKey] to prevent duplicate processing, and [serializePayload] as the
  * serialized event payload.
  *
- * Use an [OutboxPayloadSerializer] to convert your typed payload to [serializePayload].
- * When the event is dispatched by the framework, the stored payload is available via
- * [OutboxDispatchEvent.payload] and can be decoded using an [OutboxPayloadDeserializer].
+ * When the framework is ready to dispatch a stored event it calls
+ * [ApplicationOutboxDispatcher.deserialize] to reconstruct an instance of this interface
+ * from the stored data, then passes it to [ApplicationOutboxDispatcher.dispatch].
  */
 interface ApplicationOutboxEvent {
 
