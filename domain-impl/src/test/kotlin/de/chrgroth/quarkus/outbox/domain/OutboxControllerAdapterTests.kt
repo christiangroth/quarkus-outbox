@@ -372,9 +372,9 @@ class OutboxControllerAdapterTests {
     verify { partitionPausedEvents.fireAsync(match { it.partition == partition && it.reason == "my-reason" }) }
     verify(exactly = 0) { archivePort.append(any()) }
     verify(exactly = 0) { taskPort.scheduleRetry(any(), any(), any()) }
-    assertThat(meterRegistry.counter("outbox_task_rate_limited_count_by_partition", "partition", partition.key).count()).isEqualTo(1.0)
+    assertThat(meterRegistry.counter("outbox_task_paused_count_by_partition", "partition", partition.key).count()).isEqualTo(1.0)
     assertThat(meterRegistry.counter(
-      "outbox_task_rate_limited_count_by_partition_by_priority",
+      "outbox_task_paused_count_by_partition_by_priority",
       "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name
     ).count()).isEqualTo(1.0)
   }
@@ -403,26 +403,5 @@ class OutboxControllerAdapterTests {
     assertThat(adapter.dispatchTask(partition)).isFalse()
     verify(exactly = 1) { partitionPort.pause(partition, null, any()) }
     verify(exactly = 1) { taskPort.claim(any()) }
-  }
-
-  @Test
-  fun `dispatchTask with pauseOnRateLimit=false reschedules without pausing`() {
-    val task = task()
-    every { partitionPort.findOrCreate(noPausePartition) } returns activePartitionInfo(noPausePartition.key)
-    every { taskPort.claim(noPausePartition) } returns task
-    stubDeserialize()
-    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.RateLimited(Duration.ofSeconds(30))
-    val capturedNextRetryAt = mutableListOf<Instant>()
-    every { taskPort.reschedule(task, capture(capturedNextRetryAt)) } just runs
-
-    assertThat(adapter.dispatchTask(noPausePartition)).isFalse()
-    verify(exactly = 0) { partitionPort.pause(any(), any(), any()) }
-    verify { taskPort.reschedule(task, any()) }
-    assertThat(capturedNextRetryAt.first()).isAfter(Instant.now().plusSeconds(28))
-    assertThat(meterRegistry.counter("outbox_task_rate_limited_count_by_partition", "partition", noPausePartition.key).count()).isEqualTo(1.0)
-    assertThat(meterRegistry.counter(
-      "outbox_task_rate_limited_count_by_partition_by_priority",
-      "partition", noPausePartition.key, "priority", OutboxEventPriority.MEDIUM.name
-    ).count()).isEqualTo(1.0)
   }
 }

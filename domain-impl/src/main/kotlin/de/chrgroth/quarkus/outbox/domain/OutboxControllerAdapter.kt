@@ -126,16 +126,15 @@ class OutboxControllerAdapter(
       }
 
       is DispatchResult.Paused -> {
-          val pausedUntil = Instant.now().plus(result.retryAfter)
-          partitionPort.pause(partition, "rate_limited", pausedUntil)
-          taskPort.reschedule(task, pausedUntil)
-          pausePartition(partition, "rate_limited", pausedUntil)
-          
-        rateLimitedCounters.getOrPut(partition.key) {
-          meterRegistry.counter("outbox_task_rate_limited_count_by_partition", "partition", partition.key)
+        val pausedUntil = result.pausedUntil
+        partitionPort.pause(partition, result.reason, pausedUntil)
+        taskPort.reschedule(task, pausedUntil ?: Instant.now())
+        pausePartition(partition, result.reason, pausedUntil)
+        pausedCounters.getOrPut(partition.key) {
+          meterRegistry.counter("outbox_task_paused_count_by_partition", "partition", partition.key)
         }.increment()
-        rateLimitedByPriorityCounters.getOrPut("${partition.key}:${task.priority.name}") {
-          meterRegistry.counter("outbox_task_rate_limited_count_by_partition_by_priority", "partition", partition.key, "priority", task.priority.name)
+        pausedByPriorityCounters.getOrPut("${partition.key}:${task.priority.name}") {
+          meterRegistry.counter("outbox_task_paused_count_by_partition_by_priority", "partition", partition.key, "priority", task.priority.name)
         }.increment()
         if (pausedUntil != null) {
           val delayMs = maxOf(0L, pausedUntil.toEpochMilli() - Instant.now().toEpochMilli())
