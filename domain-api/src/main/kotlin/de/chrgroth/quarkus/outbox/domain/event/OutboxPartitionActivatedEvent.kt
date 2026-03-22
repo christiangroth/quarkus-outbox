@@ -7,7 +7,7 @@ import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
  *
  * This event is fired asynchronously (fire-and-forget). Client applications may
  * observe it to react to a partition becoming available for dispatch again, e.g.
- * after a rate-limit pause has been lifted.
+ * after a pause has been lifted.
  *
  * @property partition The partition that was activated.
  */

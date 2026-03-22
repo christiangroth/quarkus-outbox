@@ -4,7 +4,7 @@ import java.time.Duration
 
 /**
  * Represents a logical partition of the outbox. All tasks within the same partition
- * are processed sequentially and share a common rate-limit and throttle configuration.
+ * are processed sequentially and share a common pause and throttle configuration.
  *
  * Implement this interface (typically as an enum or sealed class) to define the
  * partitions used by your application.
@@ -13,15 +13,15 @@ interface ApplicationOutboxPartition {
   val key: String
 
   /**
-   * Controls whether the partition is paused when a rate-limited response is received.
-   * Set to `false` for partitions where processing must continue even under rate limiting
-   * (e.g. to avoid missing time-sensitive data). Defaults to `true`.
+   * Controls whether the entire partition is paused when a [DispatchResult.Pause] response
+   * is received. Set to `false` to reschedule only the affected task without pausing the
+   * partition (e.g. to keep processing other tasks). Defaults to `true`.
    */
-  val pauseOnRateLimit: Boolean get() = true
+  val pausePartition: Boolean get() = true
 
   /**
    * Minimum delay between consecutive task dispatches for this partition.
-   * Set to a positive [Duration] to proactively throttle outgoing requests and avoid rate limiting.
+   * Set to a positive [Duration] to proactively throttle outgoing requests.
    * Defaults to `null` (no throttling).
    */
   val throttleInterval: Duration? get() = null

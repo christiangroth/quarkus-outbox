@@ -35,15 +35,14 @@ class PartitionRepository : PartitionRepositoryPort, PanacheMongoRepositoryBase<
       listAll().map { it.toInfo() }
     }
 
-  override fun pause(partition: ApplicationOutboxPartition, reason: String, pausedUntil: Instant) {
+  override fun pause(partition: ApplicationOutboxPartition, reason: String?, pausedUntil: Instant?) {
+    val updates = mutableListOf(Updates.set("status", OutboxPartitionStatus.PAUSED.name))
+    if (reason != null) updates.add(Updates.set("statusReason", reason)) else updates.add(Updates.unset("statusReason"))
+    if (pausedUntil != null) updates.add(Updates.set("pausedUntil", pausedUntil)) else updates.add(Updates.unset("pausedUntil"))
     metricsRecorder.timed("outbox.partition.pause") {
       mongoCollection().findOneAndUpdate(
         Filters.eq("_id", partition.key),
-        Updates.combine(
-          Updates.set("status", OutboxPartitionStatus.PAUSED.name),
-          Updates.set("statusReason", reason),
-          Updates.set("pausedUntil", pausedUntil),
-        ),
+        Updates.combine(updates),
         FindOneAndUpdateOptions().upsert(true).returnDocument(ReturnDocument.AFTER),
       )
     }

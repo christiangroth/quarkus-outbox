@@ -96,7 +96,7 @@ class PartitionWorkerStarterTests {
     every { partitionPort.findOrCreate(partition) } returns OutboxPartitionInfo(
       key = partition.key,
       status = OutboxPartitionStatus.PAUSED,
-      statusReason = "rate_limited",
+      statusReason = "my-reason",
       pausedUntil = Instant.now().minusSeconds(60),
     )
     every { executionAdapter.activatePartition(partition) } just runs
@@ -114,7 +114,7 @@ class PartitionWorkerStarterTests {
     every { partitionPort.findOrCreate(partition) } returns OutboxPartitionInfo(
       key = partition.key,
       status = OutboxPartitionStatus.PAUSED,
-      statusReason = "rate_limited",
+      statusReason = "my-reason",
       pausedUntil = Instant.now().plusSeconds(60),
     )
 

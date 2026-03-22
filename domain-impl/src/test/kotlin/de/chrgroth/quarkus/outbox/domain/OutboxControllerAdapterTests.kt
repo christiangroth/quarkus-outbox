@@ -23,7 +23,6 @@ import kotlinx.coroutines.cancel
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
-import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
 
@@ -65,7 +64,7 @@ class OutboxControllerAdapterTests {
 
   private val noPausePartition = object : ApplicationOutboxPartition {
     override val key = "no-pause-partition"
-    override val pauseOnRateLimit = false
+    override val pausePartition = false
   }
 
   @AfterEach
@@ -164,7 +163,7 @@ class OutboxControllerAdapterTests {
     every { partitionPort.findOrCreate(partition) } returns OutboxPartitionInfo(
       key = partition.key,
       status = OutboxPartitionStatus.PAUSED,
-      statusReason = "rate_limited",
+      statusReason = "manual",
       pausedUntil = null,
     )
 
@@ -174,19 +173,19 @@ class OutboxControllerAdapterTests {
   }
 
   @Test
-  fun `dispatchTask pausing sets gauge to zero and fires paused event on rate limit`() {
+  fun `dispatchTask pausing sets gauge to zero and fires paused event on pause result`() {
     val task = task()
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
     stubDeserialize()
-    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.RateLimited(Duration.ofSeconds(30))
-    every { partitionPort.pause(partition, "rate_limited", any()) } just runs
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Pause(reason = "my-reason", pausedUntil = Instant.now().plusSeconds(30))
+    every { partitionPort.pause(partition, any(), any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
     every { partitionPort.resume(partition) } just runs
 
     adapter.dispatchTask(partition)
 
-    verify { partitionPausedEvents.fireAsync(match { it.partition == partition && it.reason == "rate_limited" }) }
+    verify { partitionPausedEvents.fireAsync(match { it.partition == partition && it.reason == "my-reason" }) }
     assertThat(meterRegistry.find("outbox_partition_status").tag("partition", partition.key).gauge()?.value()).isEqualTo(0.0)
   }
 
@@ -319,32 +318,32 @@ class OutboxControllerAdapterTests {
   }
 
   @Test
-  fun `dispatchTask pauses partition reschedules task increments rateLimitedCounter and fires paused event`() {
+  fun `dispatchTask pauses partition reschedules task increments pausedCounter and fires paused event`() {
     val task = task()
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
     stubDeserialize()
-    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.RateLimited(Duration.ofSeconds(30))
-    every { partitionPort.pause(partition, "rate_limited", any()) } just runs
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Pause(reason = "my-reason", pausedUntil = Instant.now().plusSeconds(30))
+    every { partitionPort.pause(partition, "my-reason", any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
     every { partitionPort.resume(partition) } just runs
 
     assertThat(adapter.dispatchTask(partition)).isFalse()
-    verify { partitionPort.pause(partition, "rate_limited", any()) }
+    verify { partitionPort.pause(partition, "my-reason", any()) }
     verify { taskPort.reschedule(task, any()) }
-    verify { partitionPausedEvents.fireAsync(match { it.partition == partition && it.reason == "rate_limited" }) }
+    verify { partitionPausedEvents.fireAsync(match { it.partition == partition && it.reason == "my-reason" }) }
     verify(exactly = 0) { archivePort.append(any()) }
     verify(exactly = 0) { taskPort.scheduleRetry(any(), any(), any()) }
-    assertThat(meterRegistry.counter("outbox_tasks_rate_limited_total", "partition", partition.key).count()).isEqualTo(1.0)
+    assertThat(meterRegistry.counter("outbox_tasks_paused_total", "partition", partition.key).count()).isEqualTo(1.0)
   }
 
   @Test
-  fun `rate limited task blocks all subsequent tasks in the partition`() {
+  fun `paused task blocks all subsequent tasks in the partition`() {
     val task = task()
     val pausedInfo = OutboxPartitionInfo(
       key = partition.key,
       status = OutboxPartitionStatus.PAUSED,
-      statusReason = "rate_limited",
+      statusReason = "my-reason",
       pausedUntil = null,
     )
     // findOrCreate is called three times: once for the partition status check before claiming,
@@ -353,24 +352,24 @@ class OutboxControllerAdapterTests {
     every { partitionPort.findOrCreate(partition) } returnsMany listOf(activePartitionInfo(), activePartitionInfo(), pausedInfo)
     every { taskPort.claim(partition) } returns task
     stubDeserialize()
-    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.RateLimited(Duration.ofSeconds(30))
-    every { partitionPort.pause(partition, "rate_limited", any()) } just runs
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Pause(pausedUntil = Instant.now().plusSeconds(30))
+    every { partitionPort.pause(partition, null, any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
     every { partitionPort.resume(partition) } just runs
 
     assertThat(adapter.dispatchTask(partition)).isFalse()
     assertThat(adapter.dispatchTask(partition)).isFalse()
-    verify(exactly = 1) { partitionPort.pause(partition, "rate_limited", any()) }
+    verify(exactly = 1) { partitionPort.pause(partition, null, any()) }
     verify(exactly = 1) { taskPort.claim(any()) }
   }
 
   @Test
-  fun `dispatchTask with pauseOnRateLimit=false reschedules without pausing`() {
+  fun `dispatchTask with pausePartition=false reschedules without pausing`() {
     val task = task()
     every { partitionPort.findOrCreate(noPausePartition) } returns activePartitionInfo(noPausePartition.key)
     every { taskPort.claim(noPausePartition) } returns task
     stubDeserialize()
-    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.RateLimited(Duration.ofSeconds(30))
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Pause(pausedUntil = Instant.now().plusSeconds(30))
     val capturedNextRetryAt = mutableListOf<Instant>()
     every { taskPort.reschedule(task, capture(capturedNextRetryAt)) } just runs
 
@@ -378,6 +377,6 @@ class OutboxControllerAdapterTests {
     verify(exactly = 0) { partitionPort.pause(any(), any(), any()) }
     verify { taskPort.reschedule(task, any()) }
     assertThat(capturedNextRetryAt.first()).isAfter(Instant.now().plusSeconds(28))
-    assertThat(meterRegistry.counter("outbox_tasks_rate_limited_total", "partition", noPausePartition.key).count()).isEqualTo(1.0)
+    assertThat(meterRegistry.counter("outbox_tasks_paused_total", "partition", noPausePartition.key).count()).isEqualTo(1.0)
   }
 }

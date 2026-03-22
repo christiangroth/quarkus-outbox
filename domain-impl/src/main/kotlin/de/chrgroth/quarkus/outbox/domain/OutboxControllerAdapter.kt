@@ -42,7 +42,7 @@ class OutboxControllerAdapter(
   private val enqueuedCounters = ConcurrentHashMap<String, Counter>()
   private val processedCounters = ConcurrentHashMap<String, Counter>()
   private val failedCounters = ConcurrentHashMap<String, Counter>()
-  private val rateLimitedCounters = ConcurrentHashMap<String, Counter>()
+  private val pausedCounters = ConcurrentHashMap<String, Counter>()
   private val partitionStatusGauges = ConcurrentHashMap<String, AtomicInteger>()
   private val archivedTasksAddedCounter = meterRegistry.counter("outbox_archive_added_count")
 
@@ -73,7 +73,7 @@ class OutboxControllerAdapter(
     partitionActivatedEvents.fireAsync(OutboxPartitionActivatedEvent(partition))
   }
 
-  private fun pausePartition(partition: ApplicationOutboxPartition, reason: String, pausedUntil: Instant?) {
+  private fun pausePartition(partition: ApplicationOutboxPartition, reason: String?, pausedUntil: Instant?) {
     getOrCreatePartitionStatusGauge(partition).set(0)
     partitionPausedEvents.fireAsync(OutboxPartitionPausedEvent(partition, reason, pausedUntil))
   }
@@ -115,25 +115,27 @@ class OutboxControllerAdapter(
         true
       }
 
-      is DispatchResult.RateLimited -> {
-        if (partition.pauseOnRateLimit) {
-          val pausedUntil = Instant.now().plus(result.retryAfter)
-          partitionPort.pause(partition, "rate_limited", pausedUntil)
-          taskPort.reschedule(task, pausedUntil)
-          pausePartition(partition, "rate_limited", pausedUntil)
+      is DispatchResult.Pause -> {
+        val pausedUntil = result.pausedUntil
+        if (partition.pausePartition) {
+          partitionPort.pause(partition, result.reason, pausedUntil)
+          taskPort.reschedule(task, pausedUntil ?: Instant.now())
+          pausePartition(partition, result.reason, pausedUntil)
         } else {
-          val nextRetryAt = Instant.now().plus(result.retryAfter)
-          taskPort.reschedule(task, nextRetryAt)
+          taskPort.reschedule(task, pausedUntil ?: Instant.now())
         }
-        rateLimitedCounters.getOrPut(partition.key) {
-          meterRegistry.counter("outbox_tasks_rate_limited_total", "partition", partition.key)
+        pausedCounters.getOrPut(partition.key) {
+          meterRegistry.counter("outbox_tasks_paused_total", "partition", partition.key)
         }.increment()
-        coroutinesPort.getScope().launch {
-          delay(result.retryAfter.toMillis())
-          if (partition.pauseOnRateLimit) {
-            activatePartition(partition)
+        if (pausedUntil != null) {
+          val delayMs = maxOf(0L, pausedUntil.toEpochMilli() - Instant.now().toEpochMilli())
+          coroutinesPort.getScope().launch {
+            delay(delayMs)
+            if (partition.pausePartition) {
+              activatePartition(partition)
+            }
+            coroutinesPort.signal(partition)
           }
-          coroutinesPort.signal(partition)
         }
         false
       }
