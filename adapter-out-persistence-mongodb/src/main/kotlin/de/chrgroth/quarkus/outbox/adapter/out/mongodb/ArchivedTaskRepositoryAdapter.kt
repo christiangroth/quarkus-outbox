@@ -44,7 +44,7 @@ class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort, PanacheMongoRe
     }.deletedCount
 
   override fun count(): Long =
-    metricsRecorder.timed("outbox_archive_counting_duration") {
+    metricsRecorder.timed("outbox.archive.count") {
       mongoCollection().countDocuments()
     }
 

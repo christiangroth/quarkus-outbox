@@ -199,13 +199,17 @@ Configured via `RetryPolicy` (default in `domain-impl`). Default:
 
 | Metric | Type | Tags |
 |--------|------|------|
-| `outbox_tasks_enqueued_total` | Counter | `partition` |
-| `outbox_tasks_processed_total` | Counter | `partition` |
-| `outbox_tasks_failed_total` | Counter | `partition` |
-| `outbox_tasks_paused_total` | Counter | `partition` |
-| `outbox_partition_status` | Gauge | `partition` (1=active, 0=paused) |
-| `mongodb.query` | Timer | `operation` |
-| `mongodb.slow.queries` | Counter | `operation` |
+| `outbox.tasks.enqueued` | Counter | `partition`, `priority` |
+| `outbox.tasks.processed` | Counter | `partition`, `priority` |
+| `outbox.tasks.failed` | Counter | `partition`, `priority` |
+| `outbox.tasks.paused` | Counter | `partition`, `priority` |
+| `outbox.partition.status` | Gauge | `partition` (1=active, 0=paused) |
+| `outbox.archive.size` | Gauge | — |
+| `outbox.archive.added` | Counter | — |
+| `outbox.archive.cleanup.duration` | Timer | — |
+| `outbox.archive.cleanup.deleted` | Counter | — |
+| `outbox.mongodb.query.duration` | Timer | `operation` |
+| `outbox.mongodb.query.slow` | Counter | `operation` |
 
 ### Deduplication
 

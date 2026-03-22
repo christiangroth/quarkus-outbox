@@ -33,7 +33,7 @@ class MetricsRecorder(
     if (durationMs >= slowQueryThresholdMs) {
       logger.warn { "Slow MongoDB query detected: operation=$operation duration=${durationMs}/${slowQueryThresholdMs}ms" }
       slowQueryCounters.getOrPut(operation) {
-        meterRegistry.counter("outbox.mongodb.query.slow.count", "operation", operation)
+        meterRegistry.counter("outbox.mongodb.query.slow", "operation", operation)
       }.increment()
     }
 

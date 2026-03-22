@@ -42,15 +42,11 @@ class OutboxControllerAdapter(
 
   private val retryPolicy = RetryPolicy()
   private val enqueuedCounters = ConcurrentHashMap<String, Counter>()
-  private val enqueuedByPriorityCounters = ConcurrentHashMap<String, Counter>()
   private val processedCounters = ConcurrentHashMap<String, Counter>()
-  private val processedByPriorityCounters = ConcurrentHashMap<String, Counter>()
   private val failedCounters = ConcurrentHashMap<String, Counter>()
-  private val failedByPriorityCounters = ConcurrentHashMap<String, Counter>()
   private val pausedCounters = ConcurrentHashMap<String, Counter>()
-  private val pausedByPriorityCounters = ConcurrentHashMap<String, Counter>()
   private val partitionStatusGauges = ConcurrentHashMap<String, AtomicInteger>()
-  private val archivedTasksAddedCounter = meterRegistry.counter("outbox_archive_added_count")
+  private val archivedTasksAddedCounter = meterRegistry.counter("outbox.archive.added")
 
   // --- OutboxControllerPort: enqueue ---
 
@@ -63,11 +59,8 @@ class OutboxControllerAdapter(
     val inserted = taskPort.enqueue(partition, event, payload, priority)
     if (inserted) {
       coroutinesPort.signal(partition)
-      enqueuedCounters.getOrPut(partition.key) {
-        meterRegistry.counter("outbox_task_enqueued_count_by_partition", "partition", partition.key)
-      }.increment()
-      enqueuedByPriorityCounters.getOrPut("${partition.key}:${priority.name}") {
-        meterRegistry.counter("outbox_task_enqueued_count_by_partition_by_priority", "partition", partition.key, "priority", priority.name)
+      enqueuedCounters.getOrPut("${partition.key}:${priority.name}") {
+        meterRegistry.counter("outbox.tasks.enqueued", "partition", partition.key, "priority", priority.name)
       }.increment()
       taskEnqueuedEvents.fireAsync(OutboxTaskEnqueuedEvent(partition, event.key))
     }
@@ -94,7 +87,7 @@ class OutboxControllerAdapter(
       }
 
       AtomicInteger(initialStatus).also { gauge ->
-        Gauge.builder("outbox_partition_status", gauge) { it.get().toDouble() }
+        Gauge.builder("outbox.partition.status", gauge) { it.get().toDouble() }
           .tag("partition", partition.key)
           .description("Outbox partition status: 1=active, 0=paused")
           .register(meterRegistry)
@@ -118,11 +111,8 @@ class OutboxControllerAdapter(
     return when (val result = applicationOutboxDispatcher.dispatch(event)) {
       is DispatchResult.Success -> {
         complete(task, partition)
-        processedCounters.getOrPut(partition.key) {
-          meterRegistry.counter("outbox_task_processed_count_by_partition", "partition", partition.key)
-        }.increment()
-        processedByPriorityCounters.getOrPut("${partition.key}:${task.priority.name}") {
-          meterRegistry.counter("outbox_task_processed_count_by_partition_by_priority", "partition", partition.key, "priority", task.priority.name)
+        processedCounters.getOrPut("${partition.key}:${task.priority.name}") {
+          meterRegistry.counter("outbox.tasks.processed", "partition", partition.key, "priority", task.priority.name)
         }.increment()
         true
       }
@@ -133,11 +123,8 @@ class OutboxControllerAdapter(
         taskPort.reschedule(task, pausedUntil ?: Instant.now())
         taskRescheduledEvents.fireAsync(OutboxTaskRescheduledEvent(partition, task.eventType))
         pausePartition(partition, result.reason, pausedUntil)
-        pausedCounters.getOrPut(partition.key) {
-          meterRegistry.counter("outbox_task_paused_count_by_partition", "partition", partition.key)
-        }.increment()
-        pausedByPriorityCounters.getOrPut("${partition.key}:${task.priority.name}") {
-          meterRegistry.counter("outbox_task_paused_count_by_partition_by_priority", "partition", partition.key, "priority", task.priority.name)
+        pausedCounters.getOrPut("${partition.key}:${task.priority.name}") {
+          meterRegistry.counter("outbox.tasks.paused", "partition", partition.key, "priority", task.priority.name)
         }.increment()
         if (pausedUntil != null) {
           val delayMs = maxOf(0L, pausedUntil.toEpochMilli() - Instant.now().toEpochMilli())
@@ -159,11 +146,8 @@ class OutboxControllerAdapter(
           val nextRetryAt = Instant.now().plus(delay)
           fail(task, result.message, nextRetryAt, partition)
         }
-        failedCounters.getOrPut(partition.key) {
-          meterRegistry.counter("outbox_task_failed_count_by_partition", "partition", partition.key)
-        }.increment()
-        failedByPriorityCounters.getOrPut("${partition.key}:${task.priority.name}") {
-          meterRegistry.counter("outbox_task_failed_count_by_partition_by_priority", "partition", partition.key, "priority", task.priority.name)
+        failedCounters.getOrPut("${partition.key}:${task.priority.name}") {
+          meterRegistry.counter("outbox.tasks.failed", "partition", partition.key, "priority", task.priority.name)
         }.increment()
         true
       }

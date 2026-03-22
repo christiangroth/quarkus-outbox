@@ -68,7 +68,7 @@ class ArchiverJobTests {
 
     job().run()
 
-    assertThat(meterRegistry.find("outbox_archive_cleanup_duration").timer()?.count()).isEqualTo(1L)
+    assertThat(meterRegistry.find("outbox.archive.cleanup.duration").timer()?.count()).isEqualTo(1L)
   }
 
   @Test
@@ -77,7 +77,7 @@ class ArchiverJobTests {
 
     job().run()
 
-    assertThat(meterRegistry.counter("outbox_archive_cleanup_count").count()).isEqualTo(7.0)
+    assertThat(meterRegistry.counter("outbox.archive.cleanup.deleted").count()).isEqualTo(7.0)
   }
 
   @Test
@@ -88,6 +88,6 @@ class ArchiverJobTests {
     j.run()
     j.run()
 
-    assertThat(meterRegistry.counter("outbox_archive_cleanup_count").count()).isEqualTo(6.0)
+    assertThat(meterRegistry.counter("outbox.archive.cleanup.deleted").count()).isEqualTo(6.0)
   }
 }
