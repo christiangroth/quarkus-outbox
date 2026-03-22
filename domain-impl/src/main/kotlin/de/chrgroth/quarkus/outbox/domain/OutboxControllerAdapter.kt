@@ -62,10 +62,10 @@ class OutboxControllerAdapter(
     if (inserted) {
       coroutinesPort.signal(partition)
       enqueuedCounters.getOrPut(partition.key) {
-        meterRegistry.counter("outbox_tasks_enqueued_all_total", "partition", partition.key)
+        meterRegistry.counter("outbox_task_enqueued_count_by_partition", "partition", partition.key)
       }.increment()
       enqueuedByPriorityCounters.getOrPut("${partition.key}:${priority.name}") {
-        meterRegistry.counter("outbox_tasks_enqueued_total", "partition", partition.key, "priority", priority.name)
+        meterRegistry.counter("outbox_task_enqueued_count_by_partition_by_priority", "partition", partition.key, "priority", priority.name)
       }.increment()
       taskEnqueuedEvents.fireAsync(OutboxTaskEnqueuedEvent(partition, event.key))
     }
@@ -117,10 +117,10 @@ class OutboxControllerAdapter(
       is DispatchResult.Success -> {
         complete(task, partition)
         processedCounters.getOrPut(partition.key) {
-          meterRegistry.counter("outbox_tasks_processed_all_total", "partition", partition.key)
+          meterRegistry.counter("outbox_task_processed_count_by_partition", "partition", partition.key)
         }.increment()
         processedByPriorityCounters.getOrPut("${partition.key}:${task.priority.name}") {
-          meterRegistry.counter("outbox_tasks_processed_total", "partition", partition.key, "priority", task.priority.name)
+          meterRegistry.counter("outbox_task_processed_count_by_partition_by_priority", "partition", partition.key, "priority", task.priority.name)
         }.increment()
         true
       }
@@ -136,10 +136,10 @@ class OutboxControllerAdapter(
           taskPort.reschedule(task, nextRetryAt)
         }
         rateLimitedCounters.getOrPut(partition.key) {
-          meterRegistry.counter("outbox_tasks_rate_limited_all_total", "partition", partition.key)
+          meterRegistry.counter("outbox_task_rate_limited_count_by_partition", "partition", partition.key)
         }.increment()
         rateLimitedByPriorityCounters.getOrPut("${partition.key}:${task.priority.name}") {
-          meterRegistry.counter("outbox_tasks_rate_limited_total", "partition", partition.key, "priority", task.priority.name)
+          meterRegistry.counter("outbox_task_rate_limited_count_by_partition_by_priority", "partition", partition.key, "priority", task.priority.name)
         }.increment()
         coroutinesPort.getScope().launch {
           delay(result.retryAfter.toMillis())
@@ -161,10 +161,10 @@ class OutboxControllerAdapter(
           fail(task, result.message, nextRetryAt, partition)
         }
         failedCounters.getOrPut(partition.key) {
-          meterRegistry.counter("outbox_tasks_failed_all_total", "partition", partition.key)
+          meterRegistry.counter("outbox_task_failed_count_by_partition", "partition", partition.key)
         }.increment()
         failedByPriorityCounters.getOrPut("${partition.key}:${task.priority.name}") {
-          meterRegistry.counter("outbox_tasks_failed_total", "partition", partition.key, "priority", task.priority.name)
+          meterRegistry.counter("outbox_task_failed_count_by_partition_by_priority", "partition", partition.key, "priority", task.priority.name)
         }.increment()
         true
       }

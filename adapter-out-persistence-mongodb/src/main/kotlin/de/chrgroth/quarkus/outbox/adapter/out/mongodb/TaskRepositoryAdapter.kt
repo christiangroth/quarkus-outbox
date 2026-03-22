@@ -161,7 +161,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
     createdAt = createdAt,
     updatedAt = updatedAt,
     nextRetryAt = nextRetryAt,
-    priority = if (priority == "NORMAL") OutboxEventPriority.MEDIUM else OutboxEventPriority.valueOf(priority),
+    priority = runCatching { OutboxEventPriority.valueOf(priority) }.getOrDefault(OutboxEventPriority.MEDIUM),
     lastError = lastError,
   )
 
