@@ -8,7 +8,7 @@ A Quarkus library that implements the [Transactional Outbox Pattern](https://mic
 - **Deduplication** – duplicate events with the same key are silently dropped
 - **Priority support** – `HIGH`, `MEDIUM` (default), and `LOW` priority tasks; high-priority tasks are dispatched first
 - **Retry with configurable backoff** – failed dispatches are retried with per-attempt delays
-- **Rate-limit handling** – partitions can be paused automatically and resumed after a back-off window
+- **Partition pause / resume** – partitions can be paused (with optional reason and resume time) and auto-resumed
 - **Per-partition throttling** – optional minimum delay between consecutive dispatches
 - **Startup recovery** – stale `PROCESSING` tasks are reset and paused partitions are restored on restart
 - **Scheduled archive cleanup** – completed and failed tasks are pruned after a configurable retention period
@@ -58,18 +58,23 @@ enum class MyPartition(override val key: String) : OutboxPartition {
 
 ```kotlin
 @ApplicationScoped
-class MyTaskDispatcher : OutboxTaskDispatcher {
+class MyTaskDispatcher : ApplicationOutboxDispatcher {
 
-    override val partitions = MyPartition.entries
+    override fun getAllPartitions() = MyPartition.entries
 
-    override fun dispatch(task: OutboxTask): OutboxTaskResult {
+    override fun deserialize(partition: ApplicationOutboxPartition, eventType: String, payload: String): ApplicationOutboxEvent {
+        // reconstruct your event from partition, eventType and payload
+        return MyEvent(partition as MyPartition, payload)
+    }
+
+    override fun dispatch(event: ApplicationOutboxEvent): DispatchResult {
         return try {
-            httpClient.post(task.payload)
-            OutboxTaskResult.Success
-        } catch (e: RateLimitException) {
-            OutboxTaskResult.RateLimited(Duration.ofSeconds(e.retryAfterSeconds))
+            httpClient.post((event as MyEvent).payload)
+            DispatchResult.Success
+        } catch (e: ThrottledException) {
+            DispatchResult.Paused(reason = "throttled", pausedUntil = Instant.now().plusSeconds(e.retryAfterSeconds))
         } catch (e: Exception) {
-            OutboxTaskResult.Failed(e.message ?: "unknown error", e)
+            DispatchResult.Failed(e.message ?: "unknown error", e)
         }
     }
 }
@@ -111,7 +116,6 @@ Implement `OutboxPartition` to configure per-partition behaviour:
 | Property | Default | Description |
 |----------|---------|-------------|
 | `key` | – (required) | Unique partition identifier |
-| `pauseOnRateLimit` | `true` | Pause the entire partition on a rate-limited response |
 | `throttleInterval` | `null` | Minimum delay between consecutive dispatches |
 
 ### Retry Policy

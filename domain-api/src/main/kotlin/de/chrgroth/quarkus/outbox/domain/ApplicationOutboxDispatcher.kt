@@ -1,6 +1,6 @@
 package de.chrgroth.quarkus.outbox.domain
 
-import java.time.Duration
+import java.time.Instant
 
 /**
  * Outbound port implemented by the application to provide partition configuration,
@@ -26,7 +26,7 @@ interface ApplicationOutboxDispatcher {
 
   /**
    * Dispatches the given [event] to its target destination.
-   * Returns a [DispatchResult] indicating success, rate-limiting, or failure.
+   * Returns a [DispatchResult] indicating success, a requested pause, or failure.
    */
   fun dispatch(event: ApplicationOutboxEvent): DispatchResult
 }
@@ -40,10 +40,10 @@ sealed interface DispatchResult {
   data object Success : DispatchResult
 
   /**
-   * The target is currently rate-limiting requests. Processing should pause for [retryAfter]
-   * before retrying.
+   * Processing should be paused, optionally until [pausedUntil].
+   * An optional [reason] can be provided to describe why the pause was requested.
    */
-  data class RateLimited(val retryAfter: Duration) : DispatchResult
+  data class Paused(val reason: String? = null, val pausedUntil: Instant? = null) : DispatchResult
 
   /** Dispatching failed with an optional [cause]. */
   data class Failed(val message: String, val cause: Throwable? = null) : DispatchResult

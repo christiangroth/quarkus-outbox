@@ -10,7 +10,7 @@
 |------|-------------|
 | Reliable dispatch | Tasks are persisted before dispatch – no event is lost on crash |
 | Deduplication | Duplicate events with the same key are silently dropped |
-| Rate-limit handling | Partitions can be paused and auto-resumed on rate-limited responses |
+| Partition pause / resume | Partitions can be paused (with optional reason and resume time) and auto-resumed |
 | Prioritisation | Tasks carry `HIGH`, `MEDIUM` (default), or `LOW` priority; high-priority tasks are dispatched first |
 | Retry with backoff | Configurable retry policy with per-attempt backoff delays |
 | Observability | Micrometer metrics and slow-query detection built in |
@@ -48,7 +48,7 @@ The following diagram shows Quarkus Outbox within its operational context.
 | Kotlin Coroutines | Non-blocking, lightweight partition workers without thread-per-partition overhead |
 | CONFLATED Channel | Signals are coalesced: many rapid enqueues produce only one dispatch cycle |
 | Atomic claim via MongoDB | `findOneAndUpdate(status=PENDING → PROCESSING)` prevents duplicate processing |
-| Partition-level pause | Rate limiting only affects the affected partition, not the whole system |
+| Partition-level pause | Pausing only affects the concerned partition, not the whole system |
 | CDI async events | Fire-and-forget domain events for client applications to react to outbox lifecycle changes |
 
 ---
@@ -131,7 +131,7 @@ All events carry `partition: ApplicationOutboxPartition` and `eventType: String`
 4. The `PartitionWorkerStarter` coroutine loop wakes up and calls `OutboxControllerAdapter.dispatchTask()` repeatedly until no task remains.
 5. `OutboxControllerAdapter` claims a task via `TaskRepositoryPort.claim()`, calls `ApplicationOutboxDispatcher.dispatch()`, and handles the result:
    - **Success** → archives via `ArchivedTaskRepositoryPort.append()`, deletes the task, fires `OutboxTaskDispatchedEvent`.
-   - **RateLimited** → reschedules the task, optionally pauses the partition, fires `OutboxPartitionPausedEvent`, schedules delayed reactivation.
+   - **Pause** → reschedules the task, optionally pauses the partition, fires `OutboxPartitionPausedEvent`, schedules delayed reactivation when `pausedUntil` is set.
    - **Failed** → retries with backoff (fires `OutboxTaskRetryScheduledEvent`) or archives as permanently failed (fires `OutboxTaskFailedEvent`).
 
 ### 7.2 Startup Recovery
@@ -150,13 +150,14 @@ On every application start, `PartitionWorkerStarter.onStart()` (with `@Priority(
 
 `ArchiverJob` runs daily at 01:00 UTC. It calls `ArchiverPort.deleteOlderThan(cutoff)` where `cutoff = now - outbox.archive.retention-days`. The `ArchiverAdapter` delegates to `ArchivedTaskRepositoryPort.deleteOlderThan()`.
 
-### 7.4 Rate Limiting
+### 7.4 Partition Pause
 
-When `ApplicationOutboxDispatcher.dispatch()` returns `DispatchResult.RateLimited(retryAfter)`:
+When `ApplicationOutboxDispatcher.dispatch()` returns `DispatchResult.Paused(reason, pausedUntil)`:
 
-- The task is rescheduled with `nextRetryAt = now + retryAfter`.
-- **If `partition.pauseOnRateLimit == true`**: the partition is persisted as `PAUSED`, the gauge is set to `0`, and a coroutine schedules `activatePartition + signal` after `retryAfter`.
-- **If `partition.pauseOnRateLimit == false`**: only the individual task is rescheduled; other tasks in the same partition continue to be processed.
+- The partition is persisted as `PAUSED` (with optional `reason` and `pausedUntil`), the gauge is set to `0`, and the task is rescheduled with `nextRetryAt = pausedUntil` (or immediately if `pausedUntil` is `null`).
+- When `pausedUntil` is set, a coroutine schedules `activatePartition + signal` at that time.
+
+The `reason` and `pausedUntil` fields are application-controlled: they allow the application to encode any pause scenario (e.g. a rate-limit response from the target system) using the library's generic ACTIVE / PAUSED model.
 
 ---
 
@@ -200,7 +201,7 @@ Configured via `RetryPolicy` (default in `domain-impl`). Default:
 | `outbox_tasks_enqueued_total` | Counter | `partition` |
 | `outbox_tasks_processed_total` | Counter | `partition` |
 | `outbox_tasks_failed_total` | Counter | `partition` |
-| `outbox_tasks_rate_limited_total` | Counter | `partition` |
+| `outbox_tasks_paused_total` | Counter | `partition` |
 | `outbox_partition_status` | Gauge | `partition` (1=active, 0=paused) |
 | `mongodb.query` | Timer | `operation` |
 | `mongodb.slow.queries` | Counter | `operation` |
@@ -216,7 +217,7 @@ Before inserting a task, `TaskRepositoryAdapter.enqueue` checks for an existing 
 | ID | Decision | Rationale |
 |----|----------|-----------|
 | ADR-1 | MongoDB as persistence store | Native fit with Quarkus Panache; flexible document model |
-| ADR-2 | Partition-based workers | Isolation between event streams; independent rate-limit handling |
+| ADR-2 | Partition-based workers | Isolation between event streams; independent pause handling |
 | ADR-3 | CONFLATED channel for wakeup | Prevents channel overflow under high enqueue rates |
 | ADR-4 | Atomic claim in MongoDB | Single `findOneAndUpdate` call ensures no two workers process the same task |
 | ADR-5 | Sealed `DispatchResult` | Exhaustive dispatch result handling enforced by the compiler |
