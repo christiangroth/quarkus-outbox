@@ -114,10 +114,11 @@ The following fire-and-forget events are published asynchronously for client app
 | `OutboxPartitionPausedEvent` | A partition is paused (includes `reason` and `pausedUntil`) |
 | `OutboxTaskEnqueuedEvent` | A task is successfully enqueued (not fired on deduplication discard) |
 | `OutboxTaskDispatchedEvent` | A task is dispatched successfully and archived |
+| `OutboxTaskRescheduledEvent` | A task is rescheduled because the partition was paused |
 | `OutboxTaskRetryScheduledEvent` | A task fails but will be retried |
 | `OutboxTaskFailedEvent` | A task permanently fails after exhausting all retries |
 
-All events carry `partition: ApplicationOutboxPartition` and `eventType: String`.
+All events carry `partition: ApplicationOutboxPartition`. Task events additionally carry `eventType: String`.
 
 ---
 
@@ -131,7 +132,7 @@ All events carry `partition: ApplicationOutboxPartition` and `eventType: String`
 4. The `PartitionWorkerStarter` coroutine loop wakes up and calls `OutboxControllerAdapter.dispatchTask()` repeatedly until no task remains.
 5. `OutboxControllerAdapter` claims a task via `TaskRepositoryPort.claim()`, calls `ApplicationOutboxDispatcher.dispatch()`, and handles the result:
    - **Success** → archives via `ArchivedTaskRepositoryPort.append()`, deletes the task, fires `OutboxTaskDispatchedEvent`.
-   - **Pause** → reschedules the task, optionally pauses the partition, fires `OutboxPartitionPausedEvent`, schedules delayed reactivation when `pausedUntil` is set.
+   - **Pause** → reschedules the task (fires `OutboxTaskRescheduledEvent`), optionally pauses the partition, fires `OutboxPartitionPausedEvent`, schedules delayed reactivation when `pausedUntil` is set.
    - **Failed** → retries with backoff (fires `OutboxTaskRetryScheduledEvent`) or archives as permanently failed (fires `OutboxTaskFailedEvent`).
 
 ### 7.2 Startup Recovery
