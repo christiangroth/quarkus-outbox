@@ -5,6 +5,7 @@ import de.chrgroth.quarkus.outbox.domain.event.OutboxPartitionPausedEvent
 import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskDispatchedEvent
 import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskEnqueuedEvent
 import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskFailedEvent
+import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskRescheduledEvent
 import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskRetryScheduledEvent
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
@@ -36,6 +37,7 @@ class OutboxControllerAdapter(
   private val taskDispatchedEvents: Event<OutboxTaskDispatchedEvent>,
   private val taskRetryScheduledEvents: Event<OutboxTaskRetryScheduledEvent>,
   private val taskFailedEvents: Event<OutboxTaskFailedEvent>,
+  private val taskRescheduledEvents: Event<OutboxTaskRescheduledEvent>,
 ) {
 
   private val retryPolicy = RetryPolicy()
@@ -119,6 +121,7 @@ class OutboxControllerAdapter(
         val pausedUntil = result.pausedUntil
         partitionPort.pause(partition, result.reason, pausedUntil)
         taskPort.reschedule(task, pausedUntil ?: Instant.now())
+        taskRescheduledEvents.fireAsync(OutboxTaskRescheduledEvent(partition, task.eventType))
         pausePartition(partition, result.reason, pausedUntil)
         pausedCounters.getOrPut("${partition.key}:${task.priority.name}") {
           meterRegistry.counter("outbox.tasks.paused", "partition", partition.key, "priority", task.priority.name)

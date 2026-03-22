@@ -1,3 +1,12 @@
+# 0.7.0 (2026.03.22)
+
+## New Features
+* Added `OutboxTaskRescheduledEvent`, fired when a task is rescheduled because the partition was paused.
+* Fixed documentation: clarified that only task events carry `eventType`, while partition events do not.
+
+
+
+---
 # 0.6.1 (2026.03.22)
 
 ## Bugfixes / Chore
