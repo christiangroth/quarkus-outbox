@@ -116,7 +116,6 @@ Implement `OutboxPartition` to configure per-partition behaviour:
 | Property | Default | Description |
 |----------|---------|-------------|
 | `key` | – (required) | Unique partition identifier |
-| `pausePartition` | `true` | Pause the entire partition on a `DispatchResult.Pause` response |
 | `throttleInterval` | `null` | Minimum delay between consecutive dispatches |
 
 ### Retry Policy

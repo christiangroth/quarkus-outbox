@@ -154,9 +154,8 @@ On every application start, `PartitionWorkerStarter.onStart()` (with `@Priority(
 
 When `ApplicationOutboxDispatcher.dispatch()` returns `DispatchResult.Pause(reason, pausedUntil)`:
 
-- The task is rescheduled with `nextRetryAt = pausedUntil` (or immediately if `pausedUntil` is `null`).
-- **If `partition.pausePartition == true`**: the partition is persisted as `PAUSED` (with optional `reason` and `pausedUntil`), the gauge is set to `0`, and – when `pausedUntil` is set – a coroutine schedules `activatePartition + signal` at that time.
-- **If `partition.pausePartition == false`**: only the individual task is rescheduled; other tasks in the same partition continue to be processed.
+- The partition is persisted as `PAUSED` (with optional `reason` and `pausedUntil`), the gauge is set to `0`, and the task is rescheduled with `nextRetryAt = pausedUntil` (or immediately if `pausedUntil` is `null`).
+- When `pausedUntil` is set, a coroutine schedules `activatePartition + signal` at that time.
 
 The `reason` and `pausedUntil` fields are application-controlled: they allow the application to encode any pause scenario (e.g. a rate-limit response from the target system) using the library's generic ACTIVE / PAUSED model.
 

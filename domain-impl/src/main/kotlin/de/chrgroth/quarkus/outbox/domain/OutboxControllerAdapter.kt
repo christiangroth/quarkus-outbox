@@ -117,13 +117,9 @@ class OutboxControllerAdapter(
 
       is DispatchResult.Pause -> {
         val pausedUntil = result.pausedUntil
-        if (partition.pausePartition) {
-          partitionPort.pause(partition, result.reason, pausedUntil)
-          taskPort.reschedule(task, pausedUntil ?: Instant.now())
-          pausePartition(partition, result.reason, pausedUntil)
-        } else {
-          taskPort.reschedule(task, pausedUntil ?: Instant.now())
-        }
+        partitionPort.pause(partition, result.reason, pausedUntil)
+        taskPort.reschedule(task, pausedUntil ?: Instant.now())
+        pausePartition(partition, result.reason, pausedUntil)
         pausedCounters.getOrPut(partition.key) {
           meterRegistry.counter("outbox_tasks_paused_total", "partition", partition.key)
         }.increment()
@@ -131,9 +127,7 @@ class OutboxControllerAdapter(
           val delayMs = maxOf(0L, pausedUntil.toEpochMilli() - Instant.now().toEpochMilli())
           coroutinesPort.getScope().launch {
             delay(delayMs)
-            if (partition.pausePartition) {
-              activatePartition(partition)
-            }
+            activatePartition(partition)
             coroutinesPort.signal(partition)
           }
         }

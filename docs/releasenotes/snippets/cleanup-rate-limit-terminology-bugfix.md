@@ -1,3 +1,2 @@
 * Replaced `DispatchResult.RateLimited` with `DispatchResult.Pause(reason, pausedUntil)` – applications can now express any pause scenario using the generic ACTIVE / PAUSED model.
-* Renamed `pauseOnRateLimit` partition property to `pausePartition`.
 * Renamed metric `outbox_tasks_rate_limited_total` to `outbox_tasks_paused_total`.

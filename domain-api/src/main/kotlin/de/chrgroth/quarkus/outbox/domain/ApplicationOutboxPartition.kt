@@ -13,13 +13,6 @@ interface ApplicationOutboxPartition {
   val key: String
 
   /**
-   * Controls whether the entire partition is paused when a [DispatchResult.Pause] response
-   * is received. Set to `false` to reschedule only the affected task without pausing the
-   * partition (e.g. to keep processing other tasks). Defaults to `true`.
-   */
-  val pausePartition: Boolean get() = true
-
-  /**
    * Minimum delay between consecutive task dispatches for this partition.
    * Set to a positive [Duration] to proactively throttle outgoing requests.
    * Defaults to `null` (no throttling).

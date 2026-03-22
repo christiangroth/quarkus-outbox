@@ -62,11 +62,6 @@ class OutboxControllerAdapterTests {
     override val key = "test-partition"
   }
 
-  private val noPausePartition = object : ApplicationOutboxPartition {
-    override val key = "no-pause-partition"
-    override val pausePartition = false
-  }
-
   @AfterEach
   fun tearDown() {
     testScope.cancel()
@@ -361,22 +356,5 @@ class OutboxControllerAdapterTests {
     assertThat(adapter.dispatchTask(partition)).isFalse()
     verify(exactly = 1) { partitionPort.pause(partition, null, any()) }
     verify(exactly = 1) { taskPort.claim(any()) }
-  }
-
-  @Test
-  fun `dispatchTask with pausePartition=false reschedules without pausing`() {
-    val task = task()
-    every { partitionPort.findOrCreate(noPausePartition) } returns activePartitionInfo(noPausePartition.key)
-    every { taskPort.claim(noPausePartition) } returns task
-    stubDeserialize()
-    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Pause(pausedUntil = Instant.now().plusSeconds(30))
-    val capturedNextRetryAt = mutableListOf<Instant>()
-    every { taskPort.reschedule(task, capture(capturedNextRetryAt)) } just runs
-
-    assertThat(adapter.dispatchTask(noPausePartition)).isFalse()
-    verify(exactly = 0) { partitionPort.pause(any(), any(), any()) }
-    verify { taskPort.reschedule(task, any()) }
-    assertThat(capturedNextRetryAt.first()).isAfter(Instant.now().plusSeconds(28))
-    assertThat(meterRegistry.counter("outbox_tasks_paused_total", "partition", noPausePartition.key).count()).isEqualTo(1.0)
   }
 }
