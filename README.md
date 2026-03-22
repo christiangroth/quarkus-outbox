@@ -92,18 +92,17 @@ class OrderService(private val outbox: Outbox) {
 
 ```properties
 # application.properties
-app.outbox.archive-retention-days=90
+outbox.archive.retention-days=90
 ```
-
-## Architecture
-
-See [docs/arc42.md](docs/arc42.md) for the full architecture documentation including component diagrams and sequence diagrams.
 
 ## Configuration Reference
 
+### Application Properties
+
 | Property | Default | Description |
 |----------|---------|-------------|
-| `app.outbox.archive-retention-days` | – (required) | Number of days to retain archived tasks |
+| `outbox.archive.retention-days` | `365` | Number of days to retain archived tasks (only when using `adapter-in-scheduler`) |
+| `outbox.mongodb.slow-query-threshold-ms` | `100` | Threshold in milliseconds above which a MongoDB query is logged as slow |
 
 ### Partition Configuration
 
@@ -121,21 +120,8 @@ Provide a CDI bean of type `RetryPolicy` to override the defaults:
 
 | Setting | Default |
 |---------|---------|
-| `maxAttempts` | 5 |
-| `backoff[0]` | 5 s |
-| `backoff[1]` | 10 s |
-| `backoff[2]` | 30 s |
-| `backoff[3]` | 60 s |
-
-## Metrics
-
-| Metric | Type | Tags |
-|--------|------|------|
-| `outbox_tasks_enqueued_total` | Counter | `partition` |
-| `outbox_tasks_processed_total` | Counter | `partition` |
-| `outbox_tasks_failed_total` | Counter | `partition` |
-| `outbox_tasks_rate_limited_total` | Counter | `partition` |
-| `outbox_partition_status` | Gauge | `partition` (1 = active, 0 = paused) |
+| `maxAttempts` | `5` |
+| `backoff` | 5 s, 10 s, 30 s, 60 s |
 
 ## Building
 
