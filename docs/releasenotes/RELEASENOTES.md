@@ -1,3 +1,13 @@
+# 0.7.1 (2026.03.22)
+
+## Bugfixes / Chore
+* All metric names now use dot notation consistently (e.g. `outbox.tasks.enqueued`).
+* Task counters now include both `partition` and `priority` tags on a single metric instead of separate per-partition and per-partition-per-priority counters.
+* Metrics documentation in arc42 updated to match actual metric names.
+
+
+
+---
 # 0.7.0 (2026.03.22)
 
 ## New Features
