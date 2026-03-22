@@ -8,6 +8,7 @@ dependencies {
 
   implementation(platform(libs.quarkusBom))
   implementation("io.quarkus:quarkus-scheduler")
+  implementation("io.quarkus:quarkus-micrometer")
 }
 
 allOpen {

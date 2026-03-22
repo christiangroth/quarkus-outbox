@@ -43,6 +43,11 @@ class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort, PanacheMongoRe
       )
     }.deletedCount
 
+  override fun count(): Long =
+    metricsRecorder.timed("outbox.archive.count") {
+      mongoCollection().countDocuments()
+    }
+
   private fun buildArchivedTask(task: OutboxTask, status: OutboxTaskStatus): ArchivedTask =
     Instant.now().let { now ->
       ArchivedTask().apply {
