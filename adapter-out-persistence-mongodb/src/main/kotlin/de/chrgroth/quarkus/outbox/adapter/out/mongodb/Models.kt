@@ -19,6 +19,7 @@ class Task {
   lateinit var updatedAt: Instant
   var nextRetryAt: Instant? = null
   lateinit var priority: String
+  var priorityOrder: Int = 1
   var lastError: String? = null
 }
 

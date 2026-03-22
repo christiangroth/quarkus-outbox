@@ -6,7 +6,7 @@ A Quarkus library that implements the [Transactional Outbox Pattern](https://mic
 
 - **Guaranteed delivery** – tasks are persisted before dispatch; no event is lost on crash
 - **Deduplication** – duplicate events with the same key are silently dropped
-- **Priority support** – `HIGH` and `NORMAL` priority tasks; high-priority tasks are dispatched first
+- **Priority support** – `HIGH`, `MEDIUM` (default), and `LOW` priority tasks; high-priority tasks are dispatched first
 - **Retry with configurable backoff** – failed dispatches are retried with per-attempt delays
 - **Rate-limit handling** – partitions can be paused automatically and resumed after a back-off window
 - **Per-partition throttling** – optional minimum delay between consecutive dispatches
