@@ -115,7 +115,7 @@ class OutboxControllerAdapter(
         true
       }
 
-      is DispatchResult.Pause -> {
+      is DispatchResult.Paused -> {
         val pausedUntil = result.pausedUntil
         partitionPort.pause(partition, result.reason, pausedUntil)
         taskPort.reschedule(task, pausedUntil ?: Instant.now())

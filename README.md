@@ -72,7 +72,7 @@ class MyTaskDispatcher : ApplicationOutboxDispatcher {
             httpClient.post((event as MyEvent).payload)
             DispatchResult.Success
         } catch (e: ThrottledException) {
-            DispatchResult.Pause(reason = "throttled", pausedUntil = Instant.now().plusSeconds(e.retryAfterSeconds))
+            DispatchResult.Paused(reason = "throttled", pausedUntil = Instant.now().plusSeconds(e.retryAfterSeconds))
         } catch (e: Exception) {
             DispatchResult.Failed(e.message ?: "unknown error", e)
         }

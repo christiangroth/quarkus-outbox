@@ -173,7 +173,7 @@ class OutboxControllerAdapterTests {
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
     stubDeserialize()
-    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Pause(reason = "my-reason", pausedUntil = Instant.now().plusSeconds(30))
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Paused(reason = "my-reason", pausedUntil = Instant.now().plusSeconds(30))
     every { partitionPort.pause(partition, any(), any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
     every { partitionPort.resume(partition) } just runs
@@ -318,7 +318,7 @@ class OutboxControllerAdapterTests {
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
     every { taskPort.claim(partition) } returns task
     stubDeserialize()
-    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Pause(reason = "my-reason", pausedUntil = Instant.now().plusSeconds(30))
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Paused(reason = "my-reason", pausedUntil = Instant.now().plusSeconds(30))
     every { partitionPort.pause(partition, "my-reason", any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
     every { partitionPort.resume(partition) } just runs
@@ -347,7 +347,7 @@ class OutboxControllerAdapterTests {
     every { partitionPort.findOrCreate(partition) } returnsMany listOf(activePartitionInfo(), activePartitionInfo(), pausedInfo)
     every { taskPort.claim(partition) } returns task
     stubDeserialize()
-    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Pause(pausedUntil = Instant.now().plusSeconds(30))
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Paused(pausedUntil = Instant.now().plusSeconds(30))
     every { partitionPort.pause(partition, null, any()) } just runs
     every { taskPort.reschedule(task, any()) } just runs
     every { partitionPort.resume(partition) } just runs

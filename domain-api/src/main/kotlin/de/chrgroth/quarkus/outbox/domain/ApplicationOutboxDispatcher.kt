@@ -43,7 +43,7 @@ sealed interface DispatchResult {
    * Processing should be paused, optionally until [pausedUntil].
    * An optional [reason] can be provided to describe why the pause was requested.
    */
-  data class Pause(val reason: String? = null, val pausedUntil: Instant? = null) : DispatchResult
+  data class Paused(val reason: String? = null, val pausedUntil: Instant? = null) : DispatchResult
 
   /** Dispatching failed with an optional [cause]. */
   data class Failed(val message: String, val cause: Throwable? = null) : DispatchResult

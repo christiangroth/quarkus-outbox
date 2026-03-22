@@ -152,7 +152,7 @@ On every application start, `PartitionWorkerStarter.onStart()` (with `@Priority(
 
 ### 7.4 Partition Pause
 
-When `ApplicationOutboxDispatcher.dispatch()` returns `DispatchResult.Pause(reason, pausedUntil)`:
+When `ApplicationOutboxDispatcher.dispatch()` returns `DispatchResult.Paused(reason, pausedUntil)`:
 
 - The partition is persisted as `PAUSED` (with optional `reason` and `pausedUntil`), the gauge is set to `0`, and the task is rescheduled with `nextRetryAt = pausedUntil` (or immediately if `pausedUntil` is `null`).
 - When `pausedUntil` is set, a coroutine schedules `activatePartition + signal` at that time.
