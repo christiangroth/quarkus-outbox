@@ -11,7 +11,7 @@
 | Reliable dispatch | Tasks are persisted before dispatch – no event is lost on crash |
 | Deduplication | Duplicate events with the same key are silently dropped |
 | Partition pause / resume | Partitions can be paused (with optional reason and resume time) and auto-resumed |
-| Prioritisation | Tasks carry `NORMAL` or `HIGH` priority; high-priority tasks are dispatched first |
+| Prioritisation | Tasks carry `HIGH`, `MEDIUM` (default), or `LOW` priority; high-priority tasks are dispatched first |
 | Retry with backoff | Configurable retry policy with per-attempt backoff delays |
 | Observability | Micrometer metrics and slow-query detection built in |
 | Modularity | Clean hexagonal structure across five dedicated modules |

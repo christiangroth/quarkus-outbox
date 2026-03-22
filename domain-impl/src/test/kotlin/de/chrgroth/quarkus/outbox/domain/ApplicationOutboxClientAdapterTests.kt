@@ -20,7 +20,7 @@ class ApplicationOutboxClientAdapterTests {
   private val event = object : ApplicationOutboxEvent {
     override val key = "TEST_EVENT"
     override val partition = this@ApplicationOutboxClientAdapterTests.partition
-    override val priority = OutboxEventPriority.NORMAL
+    override val priority = OutboxEventPriority.MEDIUM
     override val deduplicationKey = "dedup-1"
     override val serializePayload = """{"data":"value"}"""
   }
@@ -48,6 +48,34 @@ class ApplicationOutboxClientAdapterTests {
     clientAdapter.enqueue(highPriorityEvent)
 
     verify { controllerAdapter.enqueue(partition, highPriorityEvent, "{}", OutboxEventPriority.HIGH) }
+  }
+
+  @Test
+  fun `enqueue delegates with LOW priority when event specifies it`() {
+    val lowPriorityEvent = object : ApplicationOutboxEvent {
+      override val key = "LOW_EVENT"
+      override val partition = this@ApplicationOutboxClientAdapterTests.partition
+      override val priority = OutboxEventPriority.LOW
+      override val deduplicationKey = "dedup-low"
+      override val serializePayload = "{}"
+    }
+    every { controllerAdapter.enqueue(partition, lowPriorityEvent, "{}", OutboxEventPriority.LOW) } returns true
+
+    clientAdapter.enqueue(lowPriorityEvent)
+
+    verify { controllerAdapter.enqueue(partition, lowPriorityEvent, "{}", OutboxEventPriority.LOW) }
+  }
+
+  @Test
+  fun `event default priority is MEDIUM`() {
+    val defaultPriorityEvent = object : ApplicationOutboxEvent {
+      override val key = "DEFAULT_EVENT"
+      override val partition = this@ApplicationOutboxClientAdapterTests.partition
+      override val deduplicationKey = "dedup-default"
+      override val serializePayload = "{}"
+    }
+
+    assertThat(defaultPriorityEvent.priority).isEqualTo(OutboxEventPriority.MEDIUM)
   }
 
   @Test

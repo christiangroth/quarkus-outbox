@@ -1,11 +1,14 @@
 package de.chrgroth.quarkus.outbox.domain
 
 /**
- * Dispatch priority for outbox events. Higher-priority events are processed before normal ones.
+ * Dispatch priority for outbox events. Higher-priority events are processed before lower ones.
+ *
+ * The [sortOrder] property determines dispatch ordering: lower values are processed first.
  */
-enum class OutboxEventPriority {
-  NORMAL,
-  HIGH,
+enum class OutboxEventPriority(val sortOrder: Int) {
+  HIGH(0),
+  MEDIUM(1),
+  LOW(2),
 }
 
 /**
@@ -28,8 +31,9 @@ interface ApplicationOutboxEvent {
   /** The outbox partition this event belongs to. */
   val partition: ApplicationOutboxPartition
 
-  /** The dispatch priority for this event. */
+  /** The dispatch priority for this event. Defaults to [OutboxEventPriority.MEDIUM]. */
   val priority: OutboxEventPriority
+    get() = OutboxEventPriority.MEDIUM
 
   /** A key used to detect and discard duplicate events within the same partition. */
   val deduplicationKey: String

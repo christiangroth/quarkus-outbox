@@ -42,7 +42,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
           Updates.set("updatedAt", now),
         ),
         FindOneAndUpdateOptions()
-          .sort(Sorts.orderBy(Sorts.ascending("priority"), Sorts.ascending("createdAt")))
+          .sort(Sorts.orderBy(Sorts.ascending("priorityOrder"), Sorts.ascending("createdAt")))
           .returnDocument(ReturnDocument.AFTER),
       )
     }?.toDomain()
@@ -90,6 +90,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
         updatedAt = now
         nextRetryAt = null
         this.priority = priority.name
+        this.priorityOrder = priority.sortOrder
         lastError = null
       })
     }
@@ -160,7 +161,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
     createdAt = createdAt,
     updatedAt = updatedAt,
     nextRetryAt = nextRetryAt,
-    priority = OutboxEventPriority.valueOf(priority),
+    priority = runCatching { OutboxEventPriority.valueOf(priority) }.getOrDefault(OutboxEventPriority.MEDIUM),
     lastError = lastError,
   )
 

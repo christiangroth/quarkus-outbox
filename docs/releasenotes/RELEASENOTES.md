@@ -1,3 +1,27 @@
+# 0.6.0 (2026.03.22)
+
+## New Features
+* Priority levels are now `HIGH`, `MEDIUM` (default), and `LOW`; `MEDIUM` replaces the former `NORMAL` value.
+* Task-count metrics now carry a `priority` tag for per-priority breakdown; aggregate (all-priorities) variants are available as `outbox_tasks_*_all_total`.
+
+
+
+---
+# 0.5.0 (2026.03.22)
+
+## New Features
+* Archive handling can be enabled or disabled via the `outbox.archive.enabled` property (defaults to `true`).
+* The archive cleanup cron job is skipped when archive handling is disabled.
+* New metrics exported for archive handling: timer for cleanup job duration, counter for deleted archive tasks, counter for added archive tasks, and gauge for the current total number of archive tasks.
+
+## Bugfixes / Chore
+* All configuration properties now use a consistent `outbox.*` naming prefix.
+* Property defaults are exclusively defined in each module's `application.properties`.
+* Documentation updated with an accurate configuration reference table for client projects.
+
+
+
+---
 # 0.4.0 (2026.03.21)
 
 ## New Features
