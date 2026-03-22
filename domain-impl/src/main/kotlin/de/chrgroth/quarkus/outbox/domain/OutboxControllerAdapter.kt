@@ -44,7 +44,7 @@ class OutboxControllerAdapter(
   private val failedCounters = ConcurrentHashMap<String, Counter>()
   private val rateLimitedCounters = ConcurrentHashMap<String, Counter>()
   private val partitionStatusGauges = ConcurrentHashMap<String, AtomicInteger>()
-  private val archivedTasksAddedCounter = meterRegistry.counter("outbox_archive_tasks_added_total")
+  private val archivedTasksAddedCounter = meterRegistry.counter("outbox_archive_added_count")
 
   // --- OutboxControllerPort: enqueue ---
 

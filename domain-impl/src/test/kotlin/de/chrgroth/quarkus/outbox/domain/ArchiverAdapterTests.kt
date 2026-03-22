@@ -40,7 +40,7 @@ class ArchiverAdapterTests {
   fun `gauge reflects current archive task count`() {
     every { archivePort.count() } returns 42L
 
-    val gauge = meterRegistry.find("outbox_archive_tasks_total").gauge()
+    val gauge = meterRegistry.find("outbox_archive_count").gauge()
     assertThat(gauge).isNotNull()
     assertThat(gauge!!.value()).isEqualTo(42.0)
   }
@@ -49,7 +49,7 @@ class ArchiverAdapterTests {
   fun `gauge reflects updated archive task count`() {
     every { archivePort.count() } returnsMany listOf(10L, 15L)
 
-    val gauge = meterRegistry.find("outbox_archive_tasks_total").gauge()!!
+    val gauge = meterRegistry.find("outbox_archive_count").gauge()!!
     assertThat(gauge.value()).isEqualTo(10.0)
     assertThat(gauge.value()).isEqualTo(15.0)
   }

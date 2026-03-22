@@ -53,26 +53,22 @@ class ArchiverJobTests {
   }
 
   @Test
-  fun `run does not call archive port when disabled`() {
-    job(enabled = false).run()
-
-    verify(exactly = 0) { archiverPort.deleteOlderThan(any()) }
+  fun `test returns true when disabled so scheduler skips run`() {
+    assertThat(job(enabled = false).test(mockk())).isTrue()
   }
 
   @Test
-  fun `run records timer when enabled`() {
+  fun `test returns false when enabled so scheduler runs`() {
+    assertThat(job(enabled = true).test(mockk())).isFalse()
+  }
+
+  @Test
+  fun `run records timer when executed`() {
     every { archiverPort.deleteOlderThan(any()) } returns 3L
 
     job().run()
 
-    assertThat(meterRegistry.find("outbox_archive_cronjob_duration").timer()?.count()).isEqualTo(1L)
-  }
-
-  @Test
-  fun `run does not record timer when disabled`() {
-    job(enabled = false).run()
-
-    assertThat(meterRegistry.find("outbox_archive_cronjob_duration").timer()?.count() ?: 0L).isEqualTo(0L)
+    assertThat(meterRegistry.find("outbox_archive_cleanup_duration").timer()?.count()).isEqualTo(1L)
   }
 
   @Test
@@ -81,7 +77,7 @@ class ArchiverJobTests {
 
     job().run()
 
-    assertThat(meterRegistry.counter("outbox_archive_tasks_deleted_total").count()).isEqualTo(7.0)
+    assertThat(meterRegistry.counter("outbox_archive_cleanup_count").count()).isEqualTo(7.0)
   }
 
   @Test
@@ -92,6 +88,6 @@ class ArchiverJobTests {
     j.run()
     j.run()
 
-    assertThat(meterRegistry.counter("outbox_archive_tasks_deleted_total").count()).isEqualTo(6.0)
+    assertThat(meterRegistry.counter("outbox_archive_cleanup_count").count()).isEqualTo(6.0)
   }
 }

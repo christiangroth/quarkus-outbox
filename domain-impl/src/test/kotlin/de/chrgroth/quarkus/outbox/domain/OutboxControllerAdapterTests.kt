@@ -227,7 +227,7 @@ class OutboxControllerAdapterTests {
     verify { archivePort.append(task) }
     verify { taskPort.delete(task) }
     assertThat(meterRegistry.counter("outbox_tasks_processed_total", "partition", partition.key).count()).isEqualTo(1.0)
-    assertThat(meterRegistry.counter("outbox_archive_tasks_added_total").count()).isEqualTo(1.0)
+    assertThat(meterRegistry.counter("outbox_archive_added_count").count()).isEqualTo(1.0)
     verify { taskDispatchedEvents.fireAsync(OutboxTaskDispatchedEvent(partition, task.eventType)) }
   }
 
@@ -278,7 +278,7 @@ class OutboxControllerAdapterTests {
     verify { archivePort.appendFailed(task, "permanent failure") }
     verify { taskPort.delete(task) }
     assertThat(meterRegistry.counter("outbox_tasks_failed_total", "partition", partition.key).count()).isEqualTo(1.0)
-    assertThat(meterRegistry.counter("outbox_archive_tasks_added_total").count()).isEqualTo(1.0)
+    assertThat(meterRegistry.counter("outbox_archive_added_count").count()).isEqualTo(1.0)
     verify { taskFailedEvents.fireAsync(OutboxTaskFailedEvent(partition, task.eventType)) }
   }
 

@@ -15,7 +15,7 @@ class ArchiverAdapter(
 ) : ArchiverPort {
 
   init {
-    Gauge.builder("outbox_archive_tasks_total", archivePort) { it.count().toDouble() }
+    Gauge.builder("outbox_archive_count", archivePort) { it.count().toDouble() }
       .description("Current number of tasks in the archive")
       .register(meterRegistry)
   }
