@@ -22,10 +22,10 @@ class ArchiverJob(
   private val retentionDays: Long,
 ) : Scheduled.SkipPredicate {
 
-  private val cleanupTimer = Timer.builder("outbox_archive_cleanup_duration")
+  private val cleanupTimer = Timer.builder("outbox.archive.cleanup.duration")
     .description("Duration of archive cleanup cron job")
     .register(meterRegistry)
-  private val deletionCounter = meterRegistry.counter("outbox_archive_cleanup_count")
+  private val deletionCounter = meterRegistry.counter("outbox.archive.cleanup.deleted")
 
   override fun test(execution: ScheduledExecution): Boolean = !enabled
 
