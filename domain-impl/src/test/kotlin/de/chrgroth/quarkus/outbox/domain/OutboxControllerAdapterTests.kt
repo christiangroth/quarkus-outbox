@@ -5,6 +5,7 @@ import de.chrgroth.quarkus.outbox.domain.event.OutboxPartitionPausedEvent
 import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskDispatchedEvent
 import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskEnqueuedEvent
 import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskFailedEvent
+import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskRescheduledEvent
 import de.chrgroth.quarkus.outbox.domain.event.OutboxTaskRetryScheduledEvent
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
@@ -45,6 +46,7 @@ class OutboxControllerAdapterTests {
   private val taskDispatchedEvents: Event<OutboxTaskDispatchedEvent> = relaxedEventMock()
   private val taskRetryScheduledEvents: Event<OutboxTaskRetryScheduledEvent> = relaxedEventMock()
   private val taskFailedEvents: Event<OutboxTaskFailedEvent> = relaxedEventMock()
+  private val taskRescheduledEvents: Event<OutboxTaskRescheduledEvent> = relaxedEventMock()
 
   private val testScope = CoroutineScope(Dispatchers.IO)
   private val coroutinesPort: CoroutinesPort = mockk {
@@ -55,7 +57,7 @@ class OutboxControllerAdapterTests {
   private val adapter = OutboxControllerAdapter(
     taskPort, archivePort, partitionPort, coroutinesPort, meterRegistry, applicationOutboxDispatcher,
     partitionActivatedEvents, partitionPausedEvents,
-    taskEnqueuedEvents, taskDispatchedEvents, taskRetryScheduledEvents, taskFailedEvents,
+    taskEnqueuedEvents, taskDispatchedEvents, taskRetryScheduledEvents, taskFailedEvents, taskRescheduledEvents,
   )
 
   private val partition = object : ApplicationOutboxPartition {
@@ -212,6 +214,7 @@ class OutboxControllerAdapterTests {
     adapter.dispatchTask(partition)
 
     verify { partitionPausedEvents.fireAsync(match { it.partition == partition && it.reason == "my-reason" }) }
+    verify { taskRescheduledEvents.fireAsync(OutboxTaskRescheduledEvent(partition, task.eventType)) }
     assertThat(meterRegistry.find("outbox_partition_status").tag("partition", partition.key).gauge()?.value()).isEqualTo(0.0)
   }
 
@@ -369,6 +372,7 @@ class OutboxControllerAdapterTests {
     assertThat(adapter.dispatchTask(partition)).isFalse()
     verify { partitionPort.pause(partition, "my-reason", any()) }
     verify { taskPort.reschedule(task, any()) }
+    verify { taskRescheduledEvents.fireAsync(OutboxTaskRescheduledEvent(partition, task.eventType)) }
     verify { partitionPausedEvents.fireAsync(match { it.partition == partition && it.reason == "my-reason" }) }
     verify(exactly = 0) { archivePort.append(any()) }
     verify(exactly = 0) { taskPort.scheduleRetry(any(), any(), any()) }
