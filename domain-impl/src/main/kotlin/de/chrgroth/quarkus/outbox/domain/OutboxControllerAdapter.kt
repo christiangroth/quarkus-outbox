@@ -44,6 +44,7 @@ class OutboxControllerAdapter(
   private val failedCounters = ConcurrentHashMap<String, Counter>()
   private val rateLimitedCounters = ConcurrentHashMap<String, Counter>()
   private val partitionStatusGauges = ConcurrentHashMap<String, AtomicInteger>()
+  private val archivedTasksAddedCounter = meterRegistry.counter("outbox_archive_added_count")
 
   // --- OutboxControllerPort: enqueue ---
 
@@ -158,6 +159,7 @@ class OutboxControllerAdapter(
 
   fun complete(task: OutboxTask, partition: ApplicationOutboxPartition) {
     archivePort.append(task)
+    archivedTasksAddedCounter.increment()
     taskPort.delete(task)
     taskDispatchedEvents.fireAsync(OutboxTaskDispatchedEvent(partition, task.eventType))
   }
@@ -165,6 +167,7 @@ class OutboxControllerAdapter(
   fun fail(task: OutboxTask, error: String, nextRetryAt: Instant?, partition: ApplicationOutboxPartition) {
     if (nextRetryAt == null) {
       archivePort.appendFailed(task, error)
+      archivedTasksAddedCounter.increment()
       taskPort.delete(task)
       taskFailedEvents.fireAsync(OutboxTaskFailedEvent(partition, task.eventType))
     } else {

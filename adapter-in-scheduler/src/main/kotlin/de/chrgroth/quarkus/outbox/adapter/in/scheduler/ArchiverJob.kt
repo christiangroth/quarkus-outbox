@@ -1,7 +1,10 @@
 package de.chrgroth.quarkus.outbox.adapter.`in`.scheduler
 
 import de.chrgroth.quarkus.outbox.domain.port.`in`.ArchiverPort
+import io.micrometer.core.instrument.MeterRegistry
+import io.micrometer.core.instrument.Timer
 import io.quarkus.scheduler.Scheduled
+import io.quarkus.scheduler.ScheduledExecution
 import jakarta.enterprise.context.ApplicationScoped
 import mu.KLogging
 import org.eclipse.microprofile.config.inject.ConfigProperty
@@ -12,17 +15,29 @@ import java.time.temporal.ChronoUnit
 @Suppress("Unused")
 class ArchiverJob(
   private val archiverPort: ArchiverPort,
+  private val meterRegistry: MeterRegistry,
+  @param:ConfigProperty(name = "outbox.archive.enabled")
+  private val enabled: Boolean,
   @param:ConfigProperty(name = "outbox.archive.retention-days")
   private val retentionDays: Long,
-) {
+) : Scheduled.SkipPredicate {
 
-  @Scheduled(cron = "0 0 1 * * ?")
+  private val cleanupTimer = Timer.builder("outbox_archive_cleanup_duration")
+    .description("Duration of archive cleanup cron job")
+    .register(meterRegistry)
+  private val deletionCounter = meterRegistry.counter("outbox_archive_cleanup_count")
+
+  override fun test(execution: ScheduledExecution): Boolean = !enabled
+
+  @Scheduled(cron = "0 0 1 * * ?", skipExecutionIf = ArchiverJob::class)
   fun run() {
     logger.info { "Running outbox archive cleanup (retention: $retentionDays days)" }
     val cutoff = Instant.now().minus(retentionDays, ChronoUnit.DAYS)
-    archiverPort.deleteOlderThan(cutoff).also { deletionCount ->
-      logger.info { "Outbox archive cleanup deleted $deletionCount entries older than $cutoff" }
-    }
+    val sample = Timer.start(meterRegistry)
+    val deletionCount = archiverPort.deleteOlderThan(cutoff)
+    sample.stop(cleanupTimer)
+    deletionCounter.increment(deletionCount.toDouble())
+    logger.info { "Outbox archive cleanup deleted $deletionCount entries older than $cutoff" }
   }
 
   companion object : KLogging()
