@@ -120,7 +120,10 @@ class OutboxControllerAdapterTests {
     assertThat(result).isTrue()
     verify { coroutinesPort.signal(partition) }
     assertThat(meterRegistry.counter("outbox_task_enqueued_count_by_partition", "partition", partition.key).count()).isEqualTo(1.0)
-    assertThat(meterRegistry.counter("outbox_task_enqueued_count_by_partition_by_priority", "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name).count()).isEqualTo(1.0)
+    assertThat(meterRegistry.counter(
+      "outbox_task_enqueued_count_by_partition_by_priority",
+      "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name
+    ).count()).isEqualTo(1.0)
     verify { taskEnqueuedEvents.fireAsync(OutboxTaskEnqueuedEvent(partition, event.key)) }
   }
 
@@ -153,7 +156,10 @@ class OutboxControllerAdapterTests {
     adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.HIGH)
 
     assertThat(meterRegistry.counter("outbox_task_enqueued_count_by_partition", "partition", partition.key).count()).isEqualTo(1.0)
-    assertThat(meterRegistry.counter("outbox_task_enqueued_count_by_partition_by_priority", "partition", partition.key, "priority", OutboxEventPriority.HIGH.name).count()).isEqualTo(1.0)
+    assertThat(meterRegistry.counter(
+      "outbox_task_enqueued_count_by_partition_by_priority",
+      "partition", partition.key, "priority", OutboxEventPriority.HIGH.name
+    ).count()).isEqualTo(1.0)
   }
 
   @Test
@@ -163,7 +169,10 @@ class OutboxControllerAdapterTests {
     adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.LOW)
 
     assertThat(meterRegistry.counter("outbox_task_enqueued_count_by_partition", "partition", partition.key).count()).isEqualTo(1.0)
-    assertThat(meterRegistry.counter("outbox_task_enqueued_count_by_partition_by_priority", "partition", partition.key, "priority", OutboxEventPriority.LOW.name).count()).isEqualTo(1.0)
+    assertThat(meterRegistry.counter(
+      "outbox_task_enqueued_count_by_partition_by_priority",
+      "partition", partition.key, "priority", OutboxEventPriority.LOW.name
+    ).count()).isEqualTo(1.0)
   }
 
   // --- activatePartition ---
@@ -249,7 +258,10 @@ class OutboxControllerAdapterTests {
     verify { archivePort.append(task) }
     verify { taskPort.delete(task) }
     assertThat(meterRegistry.counter("outbox_task_processed_count_by_partition", "partition", partition.key).count()).isEqualTo(1.0)
-    assertThat(meterRegistry.counter("outbox_task_processed_count_by_partition_by_priority", "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name).count()).isEqualTo(1.0)
+    assertThat(meterRegistry.counter(
+      "outbox_task_processed_count_by_partition_by_priority",
+      "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name
+    ).count()).isEqualTo(1.0)
     assertThat(meterRegistry.counter("outbox_archive_added_count").count()).isEqualTo(1.0)
     verify { taskDispatchedEvents.fireAsync(OutboxTaskDispatchedEvent(partition, task.eventType)) }
   }
@@ -284,7 +296,10 @@ class OutboxControllerAdapterTests {
     assertThat(adapter.dispatchTask(partition)).isTrue()
     assertThat(capturedNextRetryAt.first()).isNotNull()
     assertThat(meterRegistry.counter("outbox_task_failed_count_by_partition", "partition", partition.key).count()).isEqualTo(1.0)
-    assertThat(meterRegistry.counter("outbox_task_failed_count_by_partition_by_priority", "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name).count()).isEqualTo(1.0)
+    assertThat(meterRegistry.counter(
+      "outbox_task_failed_count_by_partition_by_priority",
+      "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name
+    ).count()).isEqualTo(1.0)
     verify { taskRetryScheduledEvents.fireAsync(OutboxTaskRetryScheduledEvent(partition, task.eventType)) }
   }
 
@@ -302,7 +317,10 @@ class OutboxControllerAdapterTests {
     verify { archivePort.appendFailed(task, "permanent failure") }
     verify { taskPort.delete(task) }
     assertThat(meterRegistry.counter("outbox_task_failed_count_by_partition", "partition", partition.key).count()).isEqualTo(1.0)
-    assertThat(meterRegistry.counter("outbox_task_failed_count_by_partition_by_priority", "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name).count()).isEqualTo(1.0)
+    assertThat(meterRegistry.counter(
+      "outbox_task_failed_count_by_partition_by_priority",
+      "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name
+    ).count()).isEqualTo(1.0)
     assertThat(meterRegistry.counter("outbox_archive_added_count").count()).isEqualTo(1.0)
     verify { taskFailedEvents.fireAsync(OutboxTaskFailedEvent(partition, task.eventType)) }
   }
@@ -361,7 +379,10 @@ class OutboxControllerAdapterTests {
     verify(exactly = 0) { archivePort.append(any()) }
     verify(exactly = 0) { taskPort.scheduleRetry(any(), any(), any()) }
     assertThat(meterRegistry.counter("outbox_task_rate_limited_count_by_partition", "partition", partition.key).count()).isEqualTo(1.0)
-    assertThat(meterRegistry.counter("outbox_task_rate_limited_count_by_partition_by_priority", "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name).count()).isEqualTo(1.0)
+    assertThat(meterRegistry.counter(
+      "outbox_task_rate_limited_count_by_partition_by_priority",
+      "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name
+    ).count()).isEqualTo(1.0)
   }
 
   @Test
@@ -405,6 +426,9 @@ class OutboxControllerAdapterTests {
     verify { taskPort.reschedule(task, any()) }
     assertThat(capturedNextRetryAt.first()).isAfter(Instant.now().plusSeconds(28))
     assertThat(meterRegistry.counter("outbox_task_rate_limited_count_by_partition", "partition", noPausePartition.key).count()).isEqualTo(1.0)
-    assertThat(meterRegistry.counter("outbox_task_rate_limited_count_by_partition_by_priority", "partition", noPausePartition.key, "priority", OutboxEventPriority.MEDIUM.name).count()).isEqualTo(1.0)
+    assertThat(meterRegistry.counter(
+      "outbox_task_rate_limited_count_by_partition_by_priority",
+      "partition", noPausePartition.key, "priority", OutboxEventPriority.MEDIUM.name
+    ).count()).isEqualTo(1.0)
   }
 }
