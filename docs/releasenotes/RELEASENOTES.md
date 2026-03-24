@@ -1,3 +1,11 @@
+# 0.7.2 (2026.03.24)
+
+## Bugfixes / Chore
+* Fixed build compatibility issue when using the MongoDB persistence adapter with Java 25.
+
+
+
+---
 # 0.7.1 (2026.03.22)
 
 ## Bugfixes / Chore
