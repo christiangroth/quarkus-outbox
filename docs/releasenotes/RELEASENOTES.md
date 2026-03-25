@@ -1,3 +1,11 @@
+# 0.7.3 (2026.03.25)
+
+## Bugfixes / Chore
+* Fixed ClassFormat errors when using the MongoDB persistence adapter with Kotlin by separating Panache repository classes from port adapter classes.
+
+
+
+---
 # 0.7.2 (2026.03.24)
 
 ## Bugfixes / Chore
