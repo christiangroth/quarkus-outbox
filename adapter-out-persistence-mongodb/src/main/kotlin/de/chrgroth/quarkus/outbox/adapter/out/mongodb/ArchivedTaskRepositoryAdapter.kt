@@ -4,20 +4,22 @@ import com.mongodb.client.model.Filters
 import de.chrgroth.quarkus.outbox.domain.OutboxTask
 import de.chrgroth.quarkus.outbox.domain.OutboxTaskStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
-import io.quarkus.mongodb.panache.kotlin.PanacheMongoRepositoryBase
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.inject.Inject
 import java.time.Instant
 
 @ApplicationScoped
-class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort, PanacheMongoRepositoryBase<ArchivedTask, String> {
+class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort {
 
   @Inject
   lateinit var metricsRecorder: MetricsRecorder
 
+  @Inject
+  lateinit var repository: ArchivedTaskRepository
+
   override fun append(task: OutboxTask) {
     metricsRecorder.timed("outbox.archive.append") {
-      persist(
+      repository.persist(
         buildArchivedTask(task, OutboxTaskStatus.DONE)
       )
     }
@@ -25,7 +27,7 @@ class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort, PanacheMongoRe
 
   override fun appendFailed(task: OutboxTask, error: String) {
     metricsRecorder.timed("outbox.archive.appendFailed") {
-      persist(
+      repository.persist(
         buildArchivedTask(task, OutboxTaskStatus.FAILED)
           .apply {
             attempts = task.attempts + 1
@@ -38,14 +40,14 @@ class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort, PanacheMongoRe
 
   override fun deleteOlderThan(cutoff: Instant): Long =
     metricsRecorder.timed("outbox.archive.deleteEntriesOlderThan") {
-      mongoCollection().deleteMany(
+      repository.mongoCollection().deleteMany(
         Filters.lt("completedAt", cutoff),
       )
     }.deletedCount
 
   override fun count(): Long =
     metricsRecorder.timed("outbox.archive.count") {
-      mongoCollection().countDocuments()
+      repository.mongoCollection().countDocuments()
     }
 
   private fun buildArchivedTask(task: OutboxTask, status: OutboxTaskStatus): ArchivedTask =

@@ -2,8 +2,8 @@ package de.chrgroth.quarkus.outbox.adapter.out.mongodb.startup
 
 import com.mongodb.client.MongoCollection
 import com.mongodb.client.model.IndexOptions
-import de.chrgroth.quarkus.outbox.adapter.out.mongodb.ArchivedTaskRepositoryAdapter
-import de.chrgroth.quarkus.outbox.adapter.out.mongodb.TaskRepositoryAdapter
+import de.chrgroth.quarkus.outbox.adapter.out.mongodb.ArchivedTaskRepository
+import de.chrgroth.quarkus.outbox.adapter.out.mongodb.TaskRepository
 import io.quarkus.runtime.StartupEvent
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.enterprise.event.Observes
@@ -21,10 +21,10 @@ private data class OutboxIndex(
 class IndexInitializationStarter {
 
   @Inject
-  lateinit var tasks: TaskRepositoryAdapter
+  lateinit var tasks: TaskRepository
 
   @Inject
-  lateinit var archive: ArchivedTaskRepositoryAdapter
+  lateinit var archive: ArchivedTaskRepository
 
   fun onStartup(@Observes event: StartupEvent) {
     logger.info { "Syncing outbox MongoDB indexes..." }
