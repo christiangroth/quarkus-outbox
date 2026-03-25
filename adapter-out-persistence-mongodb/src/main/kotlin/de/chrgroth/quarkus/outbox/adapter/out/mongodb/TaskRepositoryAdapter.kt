@@ -11,7 +11,6 @@ import de.chrgroth.quarkus.outbox.domain.OutboxTask
 import de.chrgroth.quarkus.outbox.domain.OutboxEventPriority
 import de.chrgroth.quarkus.outbox.domain.OutboxTaskStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.TaskRepositoryPort
-import io.quarkus.mongodb.panache.kotlin.PanacheMongoRepositoryBase
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.inject.Inject
 import mu.KLogging
@@ -19,15 +18,18 @@ import java.time.Instant
 import java.util.UUID
 
 @ApplicationScoped
-class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Task, String> {
+class TaskRepositoryAdapter : TaskRepositoryPort {
 
   @Inject
   lateinit var metricsRecorder: MetricsRecorder
 
+  @Inject
+  lateinit var repository: TaskRepository
+
   override fun claim(partition: ApplicationOutboxPartition): OutboxTask? {
     val now = Instant.now()
     return metricsRecorder.timed("outbox.task.claim") {
-      mongoCollection().findOneAndUpdate(
+      repository.mongoCollection().findOneAndUpdate(
         Filters.and(
           Filters.eq("partition", partition.key),
           Filters.eq("status", OutboxTaskStatus.PENDING.name),
@@ -50,7 +52,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
 
   override fun delete(task: OutboxTask) {
     metricsRecorder.timed("outbox.task.delete") {
-      deleteById(task.id)
+      repository.deleteById(task.id)
     }
   }
 
@@ -62,7 +64,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
   ): Boolean {
     val deduplicationKey = event.deduplicationKey
     val existing = metricsRecorder.timed("outbox.task.dedupCheck") {
-      mongoCollection().find(
+      repository.mongoCollection().find(
         Filters.and(
           Filters.eq("partition", partition.key),
           Filters.eq("deduplicationKey", deduplicationKey),
@@ -78,7 +80,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
 
     val now = Instant.now()
     metricsRecorder.timed("outbox.task.insert") {
-      persist(Task().apply {
+      repository.persist(Task().apply {
         id = UUID.randomUUID().toString()
         this.partition = partition.key
         eventType = event.key
@@ -101,7 +103,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
   override fun scheduleRetry(task: OutboxTask, error: String, nextRetryAt: Instant) {
     val now = Instant.now()
     metricsRecorder.timed("outbox.task.scheduleRetry") {
-      mongoCollection().updateOne(
+      repository.mongoCollection().updateOne(
         Filters.eq("_id", task.id),
         Updates.combine(
           Updates.set("status", OutboxTaskStatus.PENDING.name),
@@ -117,7 +119,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
   override fun reschedule(task: OutboxTask, nextRetryAt: Instant) {
     val now = Instant.now()
     metricsRecorder.timed("outbox.task.reschedule") {
-      mongoCollection().updateOne(
+      repository.mongoCollection().updateOne(
         Filters.eq("_id", task.id),
         Updates.combine(
           Updates.set("status", OutboxTaskStatus.PENDING.name),
@@ -131,7 +133,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
   override fun resetStaleProcessing() {
     val now = Instant.now()
     val result = metricsRecorder.timed("outbox.task.resetStaleProcessing") {
-      mongoCollection().updateMany(
+      repository.mongoCollection().updateMany(
         Filters.eq("status", OutboxTaskStatus.PROCESSING.name),
         Updates.combine(
           Updates.set("status", OutboxTaskStatus.PENDING.name),
@@ -147,7 +149,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort, PanacheMongoRepositoryBase<Tas
 
   override fun countByPartition(partition: ApplicationOutboxPartition): Long =
     metricsRecorder.timed("outbox.task.countByPartition") {
-      count("partition = ?1", partition.key)
+      repository.count("partition = ?1", partition.key)
     }
 
   private fun Task.toDomain() = OutboxTask(

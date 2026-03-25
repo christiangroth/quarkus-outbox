@@ -8,20 +8,22 @@ import de.chrgroth.quarkus.outbox.domain.ApplicationOutboxPartition
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionInfo
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
-import io.quarkus.mongodb.panache.kotlin.PanacheMongoRepositoryBase
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.inject.Inject
 import java.time.Instant
 
 @ApplicationScoped
-class PartitionRepository : PartitionRepositoryPort, PanacheMongoRepositoryBase<Partition, String> {
+class PartitionRepository : PartitionRepositoryPort {
 
   @Inject
   lateinit var metricsRecorder: MetricsRecorder
 
+  @Inject
+  lateinit var repository: PartitionMongoRepository
+
   override fun findOrCreate(partition: ApplicationOutboxPartition): OutboxPartitionInfo {
     val doc = metricsRecorder.timed("outbox.partition.findOrCreate") {
-      mongoCollection().findOneAndUpdate(
+      repository.mongoCollection().findOneAndUpdate(
         Filters.eq("_id", partition.key),
         Updates.setOnInsert("status", OutboxPartitionStatus.ACTIVE.name),
         FindOneAndUpdateOptions().upsert(true).returnDocument(ReturnDocument.AFTER),
@@ -32,7 +34,7 @@ class PartitionRepository : PartitionRepositoryPort, PanacheMongoRepositoryBase<
 
   override fun findAllPartitions(): List<OutboxPartitionInfo> =
     metricsRecorder.timed("outbox.partition.findAll") {
-      listAll().map { it.toInfo() }
+      repository.listAll().map { it.toInfo() }
     }
 
   override fun pause(partition: ApplicationOutboxPartition, reason: String?, pausedUntil: Instant?) {
@@ -40,7 +42,7 @@ class PartitionRepository : PartitionRepositoryPort, PanacheMongoRepositoryBase<
     if (reason != null) updates.add(Updates.set("statusReason", reason)) else updates.add(Updates.unset("statusReason"))
     if (pausedUntil != null) updates.add(Updates.set("pausedUntil", pausedUntil)) else updates.add(Updates.unset("pausedUntil"))
     metricsRecorder.timed("outbox.partition.pause") {
-      mongoCollection().findOneAndUpdate(
+      repository.mongoCollection().findOneAndUpdate(
         Filters.eq("_id", partition.key),
         Updates.combine(updates),
         FindOneAndUpdateOptions().upsert(true).returnDocument(ReturnDocument.AFTER),
@@ -50,7 +52,7 @@ class PartitionRepository : PartitionRepositoryPort, PanacheMongoRepositoryBase<
 
   override fun resume(partition: ApplicationOutboxPartition) {
     metricsRecorder.timed("outbox.partition.resume") {
-      mongoCollection().findOneAndUpdate(
+      repository.mongoCollection().findOneAndUpdate(
         Filters.eq("_id", partition.key),
         Updates.combine(
           Updates.set("status", OutboxPartitionStatus.ACTIVE.name),
