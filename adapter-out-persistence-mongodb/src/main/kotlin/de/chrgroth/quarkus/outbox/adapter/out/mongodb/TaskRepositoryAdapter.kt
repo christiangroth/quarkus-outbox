@@ -1,5 +1,7 @@
 package de.chrgroth.quarkus.outbox.adapter.out.mongodb
 
+import com.mongodb.client.model.Accumulators
+import com.mongodb.client.model.Aggregates
 import com.mongodb.client.model.Filters
 import com.mongodb.client.model.FindOneAndUpdateOptions
 import com.mongodb.client.model.ReturnDocument
@@ -44,7 +46,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
           Updates.set("updatedAt", now),
         ),
         FindOneAndUpdateOptions()
-          .sort(Sorts.orderBy(Sorts.ascending("priorityOrder"), Sorts.ascending("createdAt")))
+          .sort(EXECUTION_ORDER_SORT)
           .returnDocument(ReturnDocument.AFTER),
       )
     }?.toDomain()
@@ -152,6 +154,26 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
       repository.count("partition = ?1", partition.key)
     }
 
+  override fun countByEventType(partitionKey: String): Map<String, Long> =
+    metricsRecorder.timed("outbox.task.countByEventType") {
+      repository.mongoCollection().aggregate(
+        listOf(
+          Aggregates.match(Filters.eq("partition", partitionKey)),
+          Aggregates.group("\$eventType", Accumulators.sum("count", 1L)),
+        ),
+        org.bson.Document::class.java,
+      ).associate { it.getString("_id") to it.getLong("count") }
+    }
+
+  override fun findByPartition(partition: ApplicationOutboxPartition): List<OutboxTask> =
+    metricsRecorder.timed("outbox.task.findByPartition") {
+      repository.mongoCollection()
+        .find(Filters.eq("partition", partition.key))
+        .sort(EXECUTION_ORDER_SORT)
+        .map { it.toDomain() }
+        .toList()
+    }
+
   private fun Task.toDomain() = OutboxTask(
     id = id,
     partition = partition,
@@ -167,5 +189,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
     lastError = lastError,
   )
 
-  companion object : KLogging()
+  companion object : KLogging() {
+    val EXECUTION_ORDER_SORT = Sorts.orderBy(Sorts.ascending("priorityOrder"), Sorts.ascending("createdAt"))
+  }
 }
