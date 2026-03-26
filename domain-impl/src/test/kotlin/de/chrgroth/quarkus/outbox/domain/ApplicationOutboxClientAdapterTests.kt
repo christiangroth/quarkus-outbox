@@ -126,4 +126,38 @@ class ApplicationOutboxClientAdapterTests {
 
     assertThat(result).isEmpty()
   }
+
+  @Test
+  fun `eventsForPartition delegates to task port`() {
+    val task = OutboxTask(
+      id = "id-1",
+      partition = "test-partition",
+      eventType = "TYPE_A",
+      payload = "{}",
+      deduplicationKey = "dedup-1",
+      status = OutboxTaskStatus.PENDING,
+      attempts = 0,
+      createdAt = java.time.Instant.EPOCH,
+      updatedAt = java.time.Instant.EPOCH,
+      nextRetryAt = null,
+      priority = OutboxEventPriority.MEDIUM,
+      lastError = null,
+    )
+    every { taskPort.findByPartition(partition) } returns listOf(task)
+
+    val result = clientAdapter.eventsForPartition(partition)
+
+    assertThat(result).containsExactly(task)
+    verify { taskPort.findByPartition(partition) }
+  }
+
+  @Test
+  fun `eventsForPartition returns empty list when partition has no tasks`() {
+    every { taskPort.findByPartition(partition) } returns emptyList()
+
+    val result = clientAdapter.eventsForPartition(partition)
+
+    assertThat(result).isEmpty()
+    verify { taskPort.findByPartition(partition) }
+  }
 }

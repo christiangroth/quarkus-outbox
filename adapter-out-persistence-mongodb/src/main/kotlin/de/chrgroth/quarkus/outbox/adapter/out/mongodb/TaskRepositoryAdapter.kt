@@ -46,7 +46,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
           Updates.set("updatedAt", now),
         ),
         FindOneAndUpdateOptions()
-          .sort(Sorts.orderBy(Sorts.ascending("priorityOrder"), Sorts.ascending("createdAt")))
+          .sort(EXECUTION_ORDER_SORT)
           .returnDocument(ReturnDocument.AFTER),
       )
     }?.toDomain()
@@ -165,6 +165,15 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
       ).associate { it.getString("_id") to it.getLong("count") }
     }
 
+  override fun findByPartition(partition: ApplicationOutboxPartition): List<OutboxTask> =
+    metricsRecorder.timed("outbox.task.findByPartition") {
+      repository.mongoCollection()
+        .find(Filters.eq("partition", partition.key))
+        .sort(EXECUTION_ORDER_SORT)
+        .map { it.toDomain() }
+        .toList()
+    }
+
   private fun Task.toDomain() = OutboxTask(
     id = id,
     partition = partition,
@@ -180,5 +189,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
     lastError = lastError,
   )
 
-  companion object : KLogging()
+  companion object : KLogging() {
+    val EXECUTION_ORDER_SORT = Sorts.orderBy(Sorts.ascending("priorityOrder"), Sorts.ascending("createdAt"))
+  }
 }

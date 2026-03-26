@@ -23,4 +23,7 @@ class ApplicationOutboxClientAdapter(
         eventPerTypeCount = eventCounts.ifEmpty { null },
       )
     }
+
+  override fun eventsForPartition(partition: ApplicationOutboxPartition): List<OutboxTask> =
+    taskPort.findByPartition(partition)
 }
