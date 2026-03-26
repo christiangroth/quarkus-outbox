@@ -1,5 +1,7 @@
 package de.chrgroth.quarkus.outbox.adapter.out.mongodb
 
+import com.mongodb.client.model.Accumulators
+import com.mongodb.client.model.Aggregates
 import com.mongodb.client.model.Filters
 import com.mongodb.client.model.FindOneAndUpdateOptions
 import com.mongodb.client.model.ReturnDocument
@@ -150,6 +152,17 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
   override fun countByPartition(partition: ApplicationOutboxPartition): Long =
     metricsRecorder.timed("outbox.task.countByPartition") {
       repository.count("partition = ?1", partition.key)
+    }
+
+  override fun countByEventType(partitionKey: String): Map<String, Long> =
+    metricsRecorder.timed("outbox.task.countByEventType") {
+      repository.mongoCollection().aggregate(
+        listOf(
+          Aggregates.match(Filters.eq("partition", partitionKey)),
+          Aggregates.group("\$eventType", Accumulators.sum("count", 1L)),
+        ),
+        org.bson.Document::class.java,
+      ).associate { it.getString("_id") to it.getLong("count") }
     }
 
   private fun Task.toDomain() = OutboxTask(

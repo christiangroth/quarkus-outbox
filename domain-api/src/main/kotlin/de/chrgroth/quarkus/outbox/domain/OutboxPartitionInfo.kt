@@ -1,7 +1,6 @@
 package de.chrgroth.quarkus.outbox.domain
 
 import java.time.Instant
-import kotlin.reflect.KClass
 
 /**
  * Snapshot of the current state of an outbox partition, including status,
@@ -13,7 +12,7 @@ data class OutboxPartitionInfo(
   val statusReason: String?,
   val pausedUntil: Instant?,
   val eventCount: Long? = null,
-  val eventPerTypeCount: Map<KClass<ApplicationOutboxEvent>, Long>? = null,
+  val eventPerTypeCount: Map<String, Long>? = null,
 )
 
 /**

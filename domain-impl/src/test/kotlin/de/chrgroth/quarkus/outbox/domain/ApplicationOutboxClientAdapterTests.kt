@@ -1,6 +1,7 @@
 package de.chrgroth.quarkus.outbox.domain
 
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
+import de.chrgroth.quarkus.outbox.domain.port.out.TaskRepositoryPort
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -11,7 +12,8 @@ class ApplicationOutboxClientAdapterTests {
 
   private val controllerAdapter: OutboxControllerAdapter = mockk(relaxed = true)
   private val partitionPort: PartitionRepositoryPort = mockk()
-  private val clientAdapter = ApplicationOutboxClientAdapter(controllerAdapter, partitionPort)
+  private val taskPort: TaskRepositoryPort = mockk()
+  private val clientAdapter = ApplicationOutboxClientAdapter(controllerAdapter, partitionPort, taskPort)
 
   private val partition = object : ApplicationOutboxPartition {
     override val key = "test-partition"
@@ -79,7 +81,7 @@ class ApplicationOutboxClientAdapterTests {
   }
 
   @Test
-  fun `partitionInfos delegates to partition port`() {
+  fun `partitionInfos enriches partitions with event counts per type`() {
     val info = OutboxPartitionInfo(
       key = "test-partition",
       status = OutboxPartitionStatus.ACTIVE,
@@ -87,11 +89,33 @@ class ApplicationOutboxClientAdapterTests {
       pausedUntil = null,
     )
     every { partitionPort.findAllPartitions() } returns listOf(info)
+    every { taskPort.countByEventType("test-partition") } returns mapOf("TYPE_A" to 3L, "TYPE_B" to 2L)
 
     val result = clientAdapter.partitionInfos()
 
-    assertThat(result).containsExactly(info)
+    assertThat(result).hasSize(1)
+    assertThat(result[0].eventCount).isEqualTo(5L)
+    assertThat(result[0].eventPerTypeCount).containsEntry("TYPE_A", 3L).containsEntry("TYPE_B", 2L)
     verify { partitionPort.findAllPartitions() }
+    verify { taskPort.countByEventType("test-partition") }
+  }
+
+  @Test
+  fun `partitionInfos sets eventPerTypeCount to null when partition has no events`() {
+    val info = OutboxPartitionInfo(
+      key = "empty-partition",
+      status = OutboxPartitionStatus.ACTIVE,
+      statusReason = null,
+      pausedUntil = null,
+    )
+    every { partitionPort.findAllPartitions() } returns listOf(info)
+    every { taskPort.countByEventType("empty-partition") } returns emptyMap()
+
+    val result = clientAdapter.partitionInfos()
+
+    assertThat(result).hasSize(1)
+    assertThat(result[0].eventCount).isEqualTo(0L)
+    assertThat(result[0].eventPerTypeCount).isNull()
   }
 
   @Test
