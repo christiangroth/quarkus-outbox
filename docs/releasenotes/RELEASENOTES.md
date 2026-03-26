@@ -1,3 +1,11 @@
+# 0.8.0 (2026.03.26)
+
+## New Features
+* `partitionInfos()` on `ApplicationOutboxClient` now returns event counts per partition, including a total `eventCount` and a breakdown by event type key in `eventPerTypeCount`.
+
+
+
+---
 # 0.7.3 (2026.03.25)
 
 ## Bugfixes / Chore
