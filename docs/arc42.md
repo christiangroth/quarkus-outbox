@@ -74,12 +74,14 @@ The following diagram shows Quarkus Outbox within its operational context.
 | `ApplicationOutboxClientAdapter` | domain-impl | Implements `ApplicationOutboxClient`; delegates to `OutboxControllerAdapter` |
 | `OutboxControllerAdapter` | domain-impl | Orchestrates enqueue, dispatch, partition activation, metrics, and CDI events |
 | `ArchiverAdapter` | domain-impl | Implements `ArchiverPort`; delegates archive cleanup to persistence port |
+| `PartitionCountReconciliationAdapter` | domain-impl | Implements `PartitionCountReconciliationPort`; recomputes and corrects drifted per-partition event type counts |
 | `PartitionWorkerStarter` | domain-impl | Startup recovery + one coroutine worker per partition |
 | `CoroutinesAdapter` | adapter-out-executor | Manages the coroutine scope and per-partition `CONFLATED` channels |
 | `ArchiverJob` | adapter-in-scheduler | Scheduled daily job that prunes old archive entries via `ArchiverPort` |
+| `PartitionCountReconciliationJob` | adapter-in-scheduler | Scheduled daily job that corrects drifted event type counts via `PartitionCountReconciliationPort` |
 | `TaskRepositoryAdapter` | adapter-out-persistence-mongodb | MongoDB operations for outbox tasks |
 | `ArchivedTaskRepositoryAdapter` | adapter-out-persistence-mongodb | MongoDB operations for archived tasks |
-| `PartitionRepository` | adapter-out-persistence-mongodb | MongoDB operations for partition state |
+| `PartitionRepository` | adapter-out-persistence-mongodb | MongoDB operations for partition state, including incremental event type counters |
 | `IndexInitializationStarter` | adapter-out-persistence-mongodb | Creates/syncs required MongoDB indexes on startup |
 | `MetricsRecorder` | adapter-out-persistence-mongodb | Wraps repository calls with Micrometer timers and slow-query counters |
 
@@ -91,6 +93,7 @@ The following diagram shows Quarkus Outbox within its operational context.
 |------|-------------|
 | `ApplicationOutboxClient` | Application-facing API for enqueueing events and querying partitions |
 | `ArchiverPort` | Trigger archive cleanup (used by `ArchiverJob`) |
+| `PartitionCountReconciliationPort` | Trigger event type count reconciliation (used by `PartitionCountReconciliationJob`) |
 
 **Outbound ports** (in `domain-impl`, package `port.out`):
 
@@ -100,7 +103,7 @@ The following diagram shows Quarkus Outbox within its operational context.
 | `CoroutinesPort` | Coroutine scope, per-partition signals |
 | `TaskRepositoryPort` | CRUD and lifecycle operations on outbox tasks |
 | `ArchivedTaskRepositoryPort` | Append and cleanup of archived tasks |
-| `PartitionRepositoryPort` | Find, create, pause, and resume partition records |
+| `PartitionRepositoryPort` | Find, create, pause, resume partition records, and maintain per-event-type task counts |
 
 ---
 
@@ -128,12 +131,12 @@ All events carry `partition: ApplicationOutboxPartition`. Task events additional
 
 1. Application calls `ApplicationOutboxClient.enqueue(event)`.
 2. `ApplicationOutboxClientAdapter` delegates to `OutboxControllerAdapter.enqueue()`.
-3. `OutboxControllerAdapter` calls `TaskRepositoryPort.enqueue()`. If the task is a duplicate it is silently discarded; otherwise the `CoroutinesPort` is signalled and `OutboxTaskEnqueuedEvent` is fired.
+3. `OutboxControllerAdapter` calls `TaskRepositoryPort.enqueue()`. If the task is a duplicate it is silently discarded; otherwise `PartitionRepositoryPort.incrementEventTypeCount()` is called, the `CoroutinesPort` is signalled, and `OutboxTaskEnqueuedEvent` is fired.
 4. The `PartitionWorkerStarter` coroutine loop wakes up and calls `OutboxControllerAdapter.dispatchTask()` repeatedly until no task remains.
 5. `OutboxControllerAdapter` claims a task via `TaskRepositoryPort.claim()`, calls `ApplicationOutboxDispatcher.dispatch()`, and handles the result:
-   - **Success** → archives via `ArchivedTaskRepositoryPort.append()`, deletes the task, fires `OutboxTaskDispatchedEvent`.
+   - **Success** → archives via `ArchivedTaskRepositoryPort.append()`, deletes the task, decrements the event type counter, fires `OutboxTaskDispatchedEvent`.
    - **Pause** → reschedules the task (fires `OutboxTaskRescheduledEvent`), optionally pauses the partition, fires `OutboxPartitionPausedEvent`, schedules delayed reactivation when `pausedUntil` is set.
-   - **Failed** → retries with backoff (fires `OutboxTaskRetryScheduledEvent`) or archives as permanently failed (fires `OutboxTaskFailedEvent`).
+   - **Failed** → retries with backoff (fires `OutboxTaskRetryScheduledEvent`) or archives as permanently failed and decrements the event type counter (fires `OutboxTaskFailedEvent`).
 
 ### 7.2 Startup Recovery
 
@@ -150,6 +153,12 @@ On every application start, `PartitionWorkerStarter.onStart()` (with `@Priority(
 ### 7.3 Archive Cleanup
 
 `ArchiverJob` runs daily at 01:00 UTC. It calls `ArchiverPort.deleteOlderThan(cutoff)` where `cutoff = now - outbox.archive.retention-days`. The `ArchiverAdapter` delegates to `ArchivedTaskRepositoryPort.deleteOlderThan()`.
+
+### 7.3a Event Type Count Maintenance
+
+Each `outbox_partitions` document carries an `eventTypeCounts` map (`eventType` → pending task count) that is maintained incrementally: `OutboxControllerAdapter` increments the counter on successful enqueue and decrements it whenever a task leaves the `outbox` collection (dispatched successfully or permanently failed). `ApplicationOutboxClientAdapter.partitionInfos()` reads these persisted counters directly instead of recomputing them via a `TaskRepositoryPort.countByEventType()` aggregation on every call.
+
+Because the increment/decrement and the underlying task write are two separate MongoDB operations (not a transaction), counters can drift if a process crashes between them. `PartitionCountReconciliationJob` runs daily at 01:30 UTC and calls `PartitionCountReconciliationPort.reconcileEventTypeCounts()`, which recomputes the true counts per partition via `TaskRepositoryPort.countByEventType()` and overwrites any partition whose persisted counts have drifted, self-healing the counters at low frequency.
 
 ### 7.4 Partition Pause
 
@@ -169,7 +178,7 @@ Quarkus Outbox is a set of JARs added as Gradle/Maven dependencies. The consumin
 1. Adds `domain-api`, `domain-impl`, `adapter-out-executor`, `adapter-out-persistence-mongodb`, and optionally `adapter-in-scheduler` as dependencies.
 2. Provides a CDI bean implementing `ApplicationOutboxDispatcher`.
 3. Ensures a MongoDB instance is reachable (configured via Quarkus standard properties).
-4. Sets `outbox.archive.retention-days` in `application.properties` when using `adapter-in-scheduler`.
+4. Sets `outbox.archive.retention-days` and `outbox.reconciliation.enabled` in `application.properties` when using `adapter-in-scheduler`.
 
 MongoDB collections created automatically:
 
@@ -177,7 +186,7 @@ MongoDB collections created automatically:
 |------------|---------|
 | `outbox` | Active tasks (PENDING / PROCESSING) |
 | `outbox_archive` | Completed and permanently-failed tasks |
-| `outbox_partitions` | Per-partition pause state |
+| `outbox_partitions` | Per-partition pause state and incrementally-maintained event type counts |
 
 ---
 
@@ -208,6 +217,8 @@ Configured via `RetryPolicy` (default in `domain-impl`). Default:
 | `outbox.archive.added` | Counter | — |
 | `outbox.archive.cleanup.duration` | Timer | — |
 | `outbox.archive.cleanup.deleted` | Counter | — |
+| `outbox.reconciliation.duration` | Timer | — |
+| `outbox.reconciliation.corrected` | Counter | — |
 | `outbox.mongodb.query.duration` | Timer | `operation` |
 | `outbox.mongodb.query.slow` | Counter | `operation` |
 
@@ -228,6 +239,7 @@ Before inserting a task, `TaskRepositoryAdapter.enqueue` checks for an existing 
 | ADR-5 | Sealed `DispatchResult` | Exhaustive dispatch result handling enforced by the compiler |
 | ADR-6 | CDI async events | Decoupled lifecycle notifications; applications observe only the events they care about |
 | ADR-7 | Hexagonal modules | Each module has a single clear responsibility; adapters are interchangeable |
+| ADR-8 | Incremental event type counters with periodic reconciliation | Avoids a per-partition aggregation query on every `partitionInfos()` call; a daily reconciliation job corrects drift from the lack of cross-write transactions |
 
 ---
 

@@ -58,6 +58,7 @@ class OutboxControllerAdapter(
   ): Boolean {
     val inserted = taskPort.enqueue(partition, event, payload, priority)
     if (inserted) {
+      partitionPort.incrementEventTypeCount(partition, event.key)
       coroutinesPort.signal(partition)
       enqueuedCounters.getOrPut("${partition.key}:${priority.name}") {
         meterRegistry.counter("outbox.tasks.enqueued", "partition", partition.key, "priority", priority.name)
@@ -160,6 +161,7 @@ class OutboxControllerAdapter(
     archivePort.append(task)
     archivedTasksAddedCounter.increment()
     taskPort.delete(task)
+    partitionPort.decrementEventTypeCount(partition, task.eventType)
     taskDispatchedEvents.fireAsync(OutboxTaskDispatchedEvent(partition, task.eventType))
   }
 
@@ -168,6 +170,7 @@ class OutboxControllerAdapter(
       archivePort.appendFailed(task, error)
       archivedTasksAddedCounter.increment()
       taskPort.delete(task)
+      partitionPort.decrementEventTypeCount(partition, task.eventType)
       taskFailedEvents.fireAsync(OutboxTaskFailedEvent(partition, task.eventType))
     } else {
       taskPort.scheduleRetry(task, error, nextRetryAt)
