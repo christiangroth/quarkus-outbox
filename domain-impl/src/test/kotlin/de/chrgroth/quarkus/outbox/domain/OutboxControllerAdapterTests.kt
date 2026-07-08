@@ -104,17 +104,27 @@ class OutboxControllerAdapterTests {
     every { applicationOutboxDispatcher.deserialize(any(), any(), any()) } returns event
   }
 
+  private fun stubIncrementEventTypeCount() {
+    every { partitionPort.incrementEventTypeCount(any(), any()) } just runs
+  }
+
+  private fun stubDecrementEventTypeCount() {
+    every { partitionPort.decrementEventTypeCount(any(), any()) } just runs
+  }
+
   // --- enqueue ---
 
   @Test
   fun `enqueue signals partition and increments counter when task is inserted`() {
     val event = testEvent()
     every { taskPort.enqueue(partition, any(), any(), any()) } returns true
+    stubIncrementEventTypeCount()
 
     val result = adapter.enqueue(partition, event, "payload", OutboxEventPriority.MEDIUM)
 
     assertThat(result).isTrue()
     verify { coroutinesPort.signal(partition) }
+    verify { partitionPort.incrementEventTypeCount(partition, event.key) }
     assertThat(meterRegistry.counter("outbox.tasks.enqueued", "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name).count()).isEqualTo(1.0)
     verify { taskEnqueuedEvents.fireAsync(OutboxTaskEnqueuedEvent(partition, event.key)) }
   }
@@ -127,6 +137,7 @@ class OutboxControllerAdapterTests {
 
     assertThat(result).isFalse()
     verify(exactly = 0) { coroutinesPort.signal(any()) }
+    verify(exactly = 0) { partitionPort.incrementEventTypeCount(any(), any()) }
     assertThat(meterRegistry.find("outbox.tasks.enqueued").counter()).isNull()
     verify(exactly = 0) { taskEnqueuedEvents.fireAsync(any()) }
   }
@@ -134,6 +145,7 @@ class OutboxControllerAdapterTests {
   @Test
   fun `enqueue passes priority to repository`() {
     every { taskPort.enqueue(partition, any(), any(), OutboxEventPriority.HIGH) } returns true
+    stubIncrementEventTypeCount()
 
     adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.HIGH)
 
@@ -143,6 +155,7 @@ class OutboxControllerAdapterTests {
   @Test
   fun `enqueue with HIGH priority increments high priority counter`() {
     every { taskPort.enqueue(partition, any(), any(), OutboxEventPriority.HIGH) } returns true
+    stubIncrementEventTypeCount()
 
     adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.HIGH)
 
@@ -152,6 +165,7 @@ class OutboxControllerAdapterTests {
   @Test
   fun `enqueue with LOW priority increments low priority counter`() {
     every { taskPort.enqueue(partition, any(), any(), OutboxEventPriority.LOW) } returns true
+    stubIncrementEventTypeCount()
 
     adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.LOW)
 
@@ -237,10 +251,12 @@ class OutboxControllerAdapterTests {
     every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Success
     every { archivePort.append(task) } just runs
     every { taskPort.delete(task) } just runs
+    stubDecrementEventTypeCount()
 
     assertThat(adapter.dispatchTask(partition)).isTrue()
     verify { archivePort.append(task) }
     verify { taskPort.delete(task) }
+    verify { partitionPort.decrementEventTypeCount(partition, task.eventType) }
     assertThat(meterRegistry.counter("outbox.tasks.processed", "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name).count()).isEqualTo(1.0)
     assertThat(meterRegistry.counter("outbox.archive.added").count()).isEqualTo(1.0)
     verify { taskDispatchedEvents.fireAsync(OutboxTaskDispatchedEvent(partition, task.eventType)) }
@@ -256,6 +272,7 @@ class OutboxControllerAdapterTests {
     every { applicationOutboxDispatcher.dispatch(deserializedEvent) } returns DispatchResult.Success
     every { archivePort.append(task) } just runs
     every { taskPort.delete(task) } just runs
+    stubDecrementEventTypeCount()
 
     adapter.dispatchTask(partition)
 
@@ -288,10 +305,12 @@ class OutboxControllerAdapterTests {
     every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Failed("permanent failure")
     every { archivePort.appendFailed(task, "permanent failure") } just runs
     every { taskPort.delete(task) } just runs
+    stubDecrementEventTypeCount()
 
     assertThat(adapter.dispatchTask(partition)).isTrue()
     verify { archivePort.appendFailed(task, "permanent failure") }
     verify { taskPort.delete(task) }
+    verify { partitionPort.decrementEventTypeCount(partition, task.eventType) }
     assertThat(meterRegistry.counter("outbox.tasks.failed", "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name).count()).isEqualTo(1.0)
     assertThat(meterRegistry.counter("outbox.archive.added").count()).isEqualTo(1.0)
     verify { taskFailedEvents.fireAsync(OutboxTaskFailedEvent(partition, task.eventType)) }

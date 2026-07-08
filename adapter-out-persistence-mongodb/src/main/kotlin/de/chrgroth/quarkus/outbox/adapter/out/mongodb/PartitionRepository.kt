@@ -64,11 +64,75 @@ class PartitionRepository : PartitionRepositoryPort {
     }
   }
 
+  override fun incrementEventTypeCount(partition: ApplicationOutboxPartition, eventType: String) =
+    adjustEventTypeCount(partition, eventType, 1L)
+
+  override fun decrementEventTypeCount(partition: ApplicationOutboxPartition, eventType: String) =
+    adjustEventTypeCount(partition, eventType, -1L)
+
+  override fun replaceEventTypeCounts(partition: ApplicationOutboxPartition, counts: Map<String, Long>) {
+    metricsRecorder.timed("outbox.partition.replaceEventTypeCounts") {
+      repository.mongoCollection().findOneAndUpdate(
+        Filters.eq("_id", partition.key),
+        Updates.combine(
+          Updates.setOnInsert("status", OutboxPartitionStatus.ACTIVE.name),
+          Updates.set("eventTypeCounts", counts.mapKeys { encodeFieldKey(it.key) }),
+        ),
+        FindOneAndUpdateOptions().upsert(true).returnDocument(ReturnDocument.AFTER),
+      )
+    }
+  }
+
+  private fun adjustEventTypeCount(partition: ApplicationOutboxPartition, eventType: String, delta: Long) {
+    val fieldKey = encodeFieldKey(eventType)
+    val updated = metricsRecorder.timed("outbox.partition.adjustEventTypeCount") {
+      repository.mongoCollection().findOneAndUpdate(
+        Filters.eq("_id", partition.key),
+        Updates.combine(
+          Updates.setOnInsert("status", OutboxPartitionStatus.ACTIVE.name),
+          Updates.inc("eventTypeCounts.$fieldKey", delta),
+        ),
+        FindOneAndUpdateOptions().upsert(true).returnDocument(ReturnDocument.AFTER),
+      )
+    }
+
+    // remove keys that dropped to zero (or below) so the document does not grow unbounded with stale entries
+    if (delta < 0 && (updated?.eventTypeCounts?.get(fieldKey) ?: 0L) <= 0L) {
+      metricsRecorder.timed("outbox.partition.pruneEventTypeCount") {
+        repository.mongoCollection().updateOne(
+          Filters.eq("_id", partition.key),
+          Updates.unset("eventTypeCounts.$fieldKey"),
+        )
+      }
+    }
+  }
+
+  /**
+   * MongoDB interprets `.` as a nested-field separator and a leading `$` as an update operator when used
+   * in a dynamic field path (e.g. `eventTypeCounts.$eventType`). Event type keys are free-form
+   * application-defined strings (e.g. fully qualified class names), so they must be encoded before use
+   * as a map field name to avoid corrupting the document structure.
+   */
+  private fun encodeFieldKey(key: String) = key
+    .replace("%", "%25")
+    .replace(".", "%2E")
+    .replace("$", "%24")
+
+  private fun decodeFieldKey(key: String) = key
+    .replace("%24", "$")
+    .replace("%2E", ".")
+    .replace("%25", "%")
+
   private fun Partition.toInfo() = OutboxPartitionInfo(
     key = partitionKey,
     status = OutboxPartitionStatus.valueOf(status),
     statusReason = statusReason,
     pausedUntil = pausedUntil,
+    eventCount = eventTypeCounts.values.sum(),
+    eventPerTypeCount = eventTypeCounts
+      .mapKeys { decodeFieldKey(it.key) }
+      .filterValues { it > 0 }
+      .ifEmpty { null },
   )
 }
 

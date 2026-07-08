@@ -81,15 +81,16 @@ class ApplicationOutboxClientAdapterTests {
   }
 
   @Test
-  fun `partitionInfos enriches partitions with event counts per type`() {
+  fun `partitionInfos returns partitions as reported by the partition port`() {
     val info = OutboxPartitionInfo(
       key = "test-partition",
       status = OutboxPartitionStatus.ACTIVE,
       statusReason = null,
       pausedUntil = null,
+      eventCount = 5L,
+      eventPerTypeCount = mapOf("TYPE_A" to 3L, "TYPE_B" to 2L),
     )
     every { partitionPort.findAllPartitions() } returns listOf(info)
-    every { taskPort.countByEventType("test-partition") } returns mapOf("TYPE_A" to 3L, "TYPE_B" to 2L)
 
     val result = clientAdapter.partitionInfos()
 
@@ -97,19 +98,19 @@ class ApplicationOutboxClientAdapterTests {
     assertThat(result[0].eventCount).isEqualTo(5L)
     assertThat(result[0].eventPerTypeCount).containsEntry("TYPE_A", 3L).containsEntry("TYPE_B", 2L)
     verify { partitionPort.findAllPartitions() }
-    verify { taskPort.countByEventType("test-partition") }
   }
 
   @Test
-  fun `partitionInfos sets eventPerTypeCount to null when partition has no events`() {
+  fun `partitionInfos passes through null eventPerTypeCount when partition has no events`() {
     val info = OutboxPartitionInfo(
       key = "empty-partition",
       status = OutboxPartitionStatus.ACTIVE,
       statusReason = null,
       pausedUntil = null,
+      eventCount = 0L,
+      eventPerTypeCount = null,
     )
     every { partitionPort.findAllPartitions() } returns listOf(info)
-    every { taskPort.countByEventType("empty-partition") } returns emptyMap()
 
     val result = clientAdapter.partitionInfos()
 

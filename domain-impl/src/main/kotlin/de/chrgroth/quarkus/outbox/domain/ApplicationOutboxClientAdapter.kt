@@ -16,13 +16,7 @@ class ApplicationOutboxClientAdapter(
   }
 
   override fun partitionInfos(): List<OutboxPartitionInfo> =
-    partitionPort.findAllPartitions().map { info ->
-      val eventCounts = taskPort.countByEventType(info.key)
-      info.copy(
-        eventCount = eventCounts.values.sum(),
-        eventPerTypeCount = eventCounts.ifEmpty { null },
-      )
-    }
+    partitionPort.findAllPartitions()
 
   override fun eventsForPartition(partition: ApplicationOutboxPartition): List<OutboxTask> =
     taskPort.findByPartition(partition)

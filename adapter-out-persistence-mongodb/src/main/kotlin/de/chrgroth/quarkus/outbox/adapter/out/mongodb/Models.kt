@@ -50,4 +50,5 @@ class Partition {
   lateinit var status: String
   var statusReason: String? = null
   var pausedUntil: Instant? = null
+  var eventTypeCounts: MutableMap<String, Long> = mutableMapOf()
 }
