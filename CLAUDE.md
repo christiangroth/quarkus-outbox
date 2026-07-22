@@ -11,6 +11,29 @@
 
 ```
 
+## Green Build Requirement
+
+CI (`gradle.yml`) runs automatically on every push to every branch (no `branches: [main]` filter), so pushes are validated without waiting for a PR. Still:
+
+- **Run `./gradlew build` locally before pushing** to catch issues early.
+- **Never use `[no ci]`/`[skip ci]`** in commit messages to bypass this validation.
+- If CI fails, fix the underlying issue — do not skip it.
+
+## Formatting
+
+All code must follow the formatting rules in `.editorconfig`. The most important rules for Kotlin:
+
+- **2-space indentation** (not 4), no tabs
+- **CRLF line endings**
+- **Max line length:** 180 characters
+- **Insert final newline** in every file
+
+Always format new and edited files according to `.editorconfig` before committing.
+
+## Documentation
+
+- **Architecture:** [docs/arc42.md](docs/arc42.md)
+
 ## Release Note Snippets
 
 **Snippet filename:** `docs/releasenotes/snippets/{branch-last-segment}-{type}.md` where `{type}` is one of `bugfix` or `feature`.
