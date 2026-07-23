@@ -1,3 +1,12 @@
+# 0.8.4 (2026.07.23)
+
+## Bugfixes / Chore
+* issue-45-20260723-0628: Fixed a bug where a failed task's scheduled retry never woke up its partition worker, so a task with a fixed/singleton deduplication key could get permanently stuck after a single transient failure until the application was restarted or an unrelated task happened to be enqueued on the same partition.
+* issue-45-20260723-0628: The partition worker is now also re-armed for any still-pending retries when the application starts up, closing the same gap across restarts.
+
+
+
+---
 # 0.8.3 (2026.07.23)
 
 ## Bugfixes / Chore
