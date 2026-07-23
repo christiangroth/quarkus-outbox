@@ -14,6 +14,8 @@ A Quarkus library that implements the [Transactional Outbox Pattern](https://mic
 - **Scheduled archive cleanup** – completed and failed tasks are pruned after a configurable retention period
 - **Observability** – built-in Micrometer counters/gauges and slow MongoDB query detection
 
+See the [Release Notes](docs/releasenotes/RELEASENOTES.md) for details on what's changed in each version.
+
 ## Modules
 
 | Module | Artifact | Description |
