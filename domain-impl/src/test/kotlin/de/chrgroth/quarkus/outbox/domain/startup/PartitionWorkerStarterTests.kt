@@ -7,6 +7,7 @@ import de.chrgroth.quarkus.outbox.domain.OutboxPartitionInfo
 import de.chrgroth.quarkus.outbox.domain.OutboxPartitionStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.CoroutinesPort
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
+import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.just
 import io.mockk.mockk
@@ -16,10 +17,15 @@ import io.quarkus.runtime.StartupEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicInteger
 
 class PartitionWorkerStarterTests {
 
@@ -166,5 +172,39 @@ class PartitionWorkerStarterTests {
     recovery.onStart(startupEvent)
 
     assertThat(activationOrder).containsExactly("reset", "activate")
+  }
+
+  @Test
+  fun `partition worker survives exception from dispatchTask and waits for next signal`() {
+    every { executionAdapter.resetStaleProcessingTasks() } just runs
+    every { application.getAllPartitions() } returns listOf(partition)
+    every { partitionPort.findOrCreate(partition) } returns OutboxPartitionInfo(
+      key = partition.key,
+      status = OutboxPartitionStatus.ACTIVE,
+      statusReason = null,
+      pausedUntil = null,
+    )
+    every { executionAdapter.activatePartition(partition) } just runs
+
+    val waitCount = AtomicInteger(0)
+    coEvery { coroutinesPort.waitOnSignal(partition) } answers { waitCount.incrementAndGet(); Unit }
+
+    val dispatchCount = AtomicInteger(0)
+    every { executionAdapter.dispatchTask(partition) } answers {
+      if (dispatchCount.getAndIncrement() == 0) throw IllegalStateException("boom") else false
+    }
+
+    recovery.onStart(startupEvent)
+
+    runBlocking {
+      withTimeout(2000) {
+        while (waitCount.get() < 2) {
+          delay(10)
+        }
+      }
+    }
+
+    assertThat(waitCount.get()).isGreaterThanOrEqualTo(2)
+    assertThat(testScope.isActive).isTrue()
   }
 }

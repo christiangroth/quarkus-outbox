@@ -54,6 +54,17 @@ class CoroutinesAdapterTests {
   }
 
   @Test
+  fun `exception in one child coroutine does not cancel the scope`() {
+    runBlocking {
+      adapter.getScope().launch {
+        throw IllegalStateException("boom")
+      }.join()
+
+      assertThat(adapter.getScope().isActive).isTrue()
+    }
+  }
+
+  @Test
   fun `wakeUp for one partition does not signal another partition`() {
     runBlocking {
       adapter.signal(partitionA)
