@@ -6,6 +6,7 @@ import de.chrgroth.quarkus.outbox.domain.OutboxTaskStatus
 import de.chrgroth.quarkus.outbox.domain.port.out.ArchivedTaskRepositoryPort
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.inject.Inject
+import org.bson.Document
 import java.time.Instant
 
 @ApplicationScoped
@@ -43,6 +44,11 @@ class ArchivedTaskRepositoryAdapter : ArchivedTaskRepositoryPort {
       repository.mongoCollection().deleteMany(
         Filters.lt("completedAt", cutoff),
       )
+    }.deletedCount
+
+  override fun deleteAll(): Long =
+    metricsRecorder.timed("outbox.archive.deleteAll") {
+      repository.mongoCollection().deleteMany(Document())
     }.deletedCount
 
   override fun count(): Long =

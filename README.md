@@ -106,7 +106,7 @@ outbox.archive.retention-days=90
 
 | Property | Default | Description |
 |----------|---------|-------------|
-| `outbox.archive.enabled` | `true` | Enables writing completed/failed tasks to the archive; also gates the retention cleanup cron job when using `adapter-in-scheduler` |
+| `outbox.archive.enabled` | `true` | Enables writing completed/failed tasks to the archive; also gates the retention cleanup cron job when using `adapter-in-scheduler`. When `false`, any existing entries in the archive collection are cleared once at startup |
 | `outbox.archive.retention-days` | `365` | Number of days to retain archived tasks (only when using `adapter-in-scheduler`) |
 | `outbox.reconciliation.enabled` | `true` | Enables the daily job that corrects drift in persisted per-partition event type counts (only when using `adapter-in-scheduler`) |
 | `outbox.mongodb.slow-query-threshold-ms` | `100` | Threshold in milliseconds above which a MongoDB query is logged as slow |
