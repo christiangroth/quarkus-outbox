@@ -1,3 +1,13 @@
+# 0.8.2 (2026.07.23)
+
+## Bugfixes / Chore
+* issue-41-20260723-0428: Fixed `outbox.archive.enabled=false` not being respected: completed/failed tasks are no longer written to the archive when the property is disabled, not just excluded from the retention cleanup job.
+* issue-41-20260723-0428: The archive collection is now cleared once at startup if archiving has been disabled and leftover entries remain.
+* issue-41-20260723-0428: Added a link to the release notes in the README features section.
+
+
+
+---
 # 0.8.1 (2026.07.08)
 
 ## Bugfixes / Chore
