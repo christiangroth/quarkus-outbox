@@ -132,6 +132,17 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
     }
   }
 
+  override fun findEarliestPendingRetryAt(partition: ApplicationOutboxPartition): Instant? =
+    metricsRecorder.timed("outbox.task.findEarliestPendingRetryAt") {
+      repository.mongoCollection().find(
+        Filters.and(
+          Filters.eq("partition", partition.key),
+          Filters.eq("status", OutboxTaskStatus.PENDING.name),
+          Filters.ne("nextRetryAt", null),
+        ),
+      ).sort(Sorts.ascending("nextRetryAt")).first()
+    }?.nextRetryAt
+
   override fun resetStaleProcessing() {
     val now = Instant.now()
     val result = metricsRecorder.timed("outbox.task.resetStaleProcessing") {

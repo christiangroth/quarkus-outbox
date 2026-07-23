@@ -12,6 +12,7 @@ interface TaskRepositoryPort {
   fun enqueue(partition: ApplicationOutboxPartition, event: ApplicationOutboxEvent, payload: String, priority: OutboxEventPriority): Boolean
   fun scheduleRetry(task: OutboxTask, error: String, nextRetryAt: Instant)
   fun reschedule(task: OutboxTask, nextRetryAt: Instant)
+  fun findEarliestPendingRetryAt(partition: ApplicationOutboxPartition): Instant?
   fun resetStaleProcessing()
   fun countByPartition(partition: ApplicationOutboxPartition): Long
   fun countByEventType(partitionKey: String): Map<String, Long>

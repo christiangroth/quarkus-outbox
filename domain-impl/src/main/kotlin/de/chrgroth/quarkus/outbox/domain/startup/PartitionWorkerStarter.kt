@@ -68,6 +68,7 @@ class PartitionWorkerStarter(
 
   private fun recoverActive(partition: ApplicationOutboxPartition) {
     executionAdapter.activatePartition(partition)
+    executionAdapter.scheduleRetryWakeupIfNeeded(partition)
     coroutinesPort.signal(partition)
   }
 

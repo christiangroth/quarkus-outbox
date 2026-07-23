@@ -438,6 +438,37 @@ class OutboxControllerAdapterTests {
     assertThat(meterRegistry.counter("outbox.archive.added").count()).isEqualTo(0.0)
   }
 
+  // --- retry re-signal ---
+
+  @Test
+  fun `fail with retry schedules a delayed re-signal for the partition`() {
+    val task = task()
+    every { taskPort.scheduleRetry(task, any(), any()) } just runs
+
+    adapter.fail(task, "transient error", Instant.now(), partition)
+
+    verify { taskPort.scheduleRetry(task, "transient error", any()) }
+    verify(timeout = 2000) { coroutinesPort.signal(partition) }
+  }
+
+  @Test
+  fun `scheduleRetryWakeupIfNeeded does nothing when no pending retry exists`() {
+    every { taskPort.findEarliestPendingRetryAt(partition) } returns null
+
+    adapter.scheduleRetryWakeupIfNeeded(partition)
+
+    verify(exactly = 0) { coroutinesPort.getScope() }
+  }
+
+  @Test
+  fun `scheduleRetryWakeupIfNeeded schedules a delayed signal for the earliest pending retry`() {
+    every { taskPort.findEarliestPendingRetryAt(partition) } returns Instant.now()
+
+    adapter.scheduleRetryWakeupIfNeeded(partition)
+
+    verify(timeout = 2000) { coroutinesPort.signal(partition) }
+  }
+
   @Test
   fun `paused task blocks all subsequent tasks in the partition`() {
     val task = task()
