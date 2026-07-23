@@ -10,6 +10,7 @@ import io.quarkus.runtime.StartupEvent
 import jakarta.annotation.Priority
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.enterprise.event.Observes
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -70,21 +71,28 @@ class PartitionWorkerStarter(
     coroutinesPort.signal(partition)
   }
 
+  @Suppress("TooGenericExceptionCaught")
   private fun startPartitionWorker(partition: ApplicationOutboxPartition) {
     logger.info { "Starting partition worker for ${partition.key}" }
     coroutinesPort.getScope().launch {
       val throttleInterval = partition.throttleInterval
       while (isActive) {
-        coroutinesPort.waitOnSignal(partition)
+        try {
+          coroutinesPort.waitOnSignal(partition)
 
-        var processed: Boolean
-        do {
-          processed = executionAdapter.dispatchTask(partition)
+          var processed: Boolean
+          do {
+            processed = executionAdapter.dispatchTask(partition)
 
-          if (processed && throttleInterval != null) {
-            delay(throttleInterval.toMillis())
-          }
-        } while (processed && isActive)
+            if (processed && throttleInterval != null) {
+              delay(throttleInterval.toMillis())
+            }
+          } while (processed && isActive)
+        } catch (e: CancellationException) {
+          throw e
+        } catch (e: Exception) {
+          logger.error(e) { "Unexpected error in partition worker for ${partition.key}, continuing" }
+        }
       }
     }
   }

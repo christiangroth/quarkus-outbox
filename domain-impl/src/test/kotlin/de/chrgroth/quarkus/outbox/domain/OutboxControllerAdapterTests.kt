@@ -320,6 +320,40 @@ class OutboxControllerAdapterTests {
   }
 
   @Test
+  fun `dispatchTask treats exception from dispatch as failed and schedules retry`() {
+    val task = task(attempts = 0)
+    every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
+    every { taskPort.claim(partition) } returns task
+    stubDeserialize()
+    every { applicationOutboxDispatcher.dispatch(any()) } throws IllegalStateException("boom")
+    val capturedNextRetryAt = mutableListOf<Instant>()
+    every { taskPort.scheduleRetry(task, any(), capture(capturedNextRetryAt)) } just runs
+
+    assertThat(adapter.dispatchTask(partition)).isTrue()
+    assertThat(capturedNextRetryAt.first()).isNotNull()
+    assertThat(meterRegistry.counter("outbox.tasks.failed", "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name).count()).isEqualTo(1.0)
+    verify { taskRetryScheduledEvents.fireAsync(OutboxTaskRetryScheduledEvent(partition, task.eventType)) }
+  }
+
+  @Test
+  fun `dispatchTask treats exception from deserialize as failed and archives after maxAttempts`() {
+    val task = task(attempts = 4)
+    every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
+    every { taskPort.claim(partition) } returns task
+    every { applicationOutboxDispatcher.deserialize(any(), any(), any()) } throws IllegalStateException("boom")
+    every { archivePort.appendFailed(task, "boom") } just runs
+    every { taskPort.delete(task) } just runs
+    stubDecrementEventTypeCount()
+
+    assertThat(adapter.dispatchTask(partition)).isTrue()
+    verify { archivePort.appendFailed(task, "boom") }
+    verify { taskPort.delete(task) }
+    verify(exactly = 0) { applicationOutboxDispatcher.dispatch(any()) }
+    assertThat(meterRegistry.counter("outbox.tasks.failed", "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name).count()).isEqualTo(1.0)
+    verify { taskFailedEvents.fireAsync(OutboxTaskFailedEvent(partition, task.eventType)) }
+  }
+
+  @Test
   fun `dispatchTask uses backoff list correctly for retry delays`() {
     val task = task(attempts = 1)
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()

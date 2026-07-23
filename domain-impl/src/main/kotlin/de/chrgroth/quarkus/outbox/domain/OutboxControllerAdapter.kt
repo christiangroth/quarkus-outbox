@@ -102,6 +102,7 @@ class OutboxControllerAdapter(
 
   fun resetStaleProcessingTasks() = taskPort.resetStaleProcessing()
 
+  @Suppress("TooGenericExceptionCaught")
   fun dispatchTask(partition: ApplicationOutboxPartition): Boolean {
     val partitionInfo = partitionPort.findOrCreate(partition)
     if (partitionInfo.status == OutboxPartitionStatus.PAUSED) {
@@ -111,8 +112,15 @@ class OutboxControllerAdapter(
     val task = taskPort.claim(partition)
       ?: return false
 
-    val event = applicationOutboxDispatcher.deserialize(partition, task.eventType, task.payload)
-    return when (val result = applicationOutboxDispatcher.dispatch(event)) {
+    val dispatchResult = try {
+      val event = applicationOutboxDispatcher.deserialize(partition, task.eventType, task.payload)
+      applicationOutboxDispatcher.dispatch(event)
+    } catch (e: Exception) {
+      logger.error(e) { "Unexpected error dispatching task ${task.id} for partition ${partition.key}, treating as failed" }
+      DispatchResult.Failed(e.message ?: e.toString(), e)
+    }
+
+    return when (dispatchResult) {
       is DispatchResult.Success -> {
         complete(task, partition)
         processedCounters.getOrPut("${partition.key}:${task.priority.name}") {
@@ -122,11 +130,11 @@ class OutboxControllerAdapter(
       }
 
       is DispatchResult.Paused -> {
-        val pausedUntil = result.pausedUntil
-        partitionPort.pause(partition, result.reason, pausedUntil)
+        val pausedUntil = dispatchResult.pausedUntil
+        partitionPort.pause(partition, dispatchResult.reason, pausedUntil)
         taskPort.reschedule(task, pausedUntil ?: Instant.now())
         taskRescheduledEvents.fireAsync(OutboxTaskRescheduledEvent(partition, task.eventType))
-        pausePartition(partition, result.reason, pausedUntil)
+        pausePartition(partition, dispatchResult.reason, pausedUntil)
         pausedCounters.getOrPut("${partition.key}:${task.priority.name}") {
           meterRegistry.counter("outbox.tasks.paused", "partition", partition.key, "priority", task.priority.name)
         }.increment()
@@ -144,11 +152,11 @@ class OutboxControllerAdapter(
       is DispatchResult.Failed -> {
         val newAttempts = task.attempts + 1
         if (newAttempts >= retryPolicy.maxAttempts) {
-          fail(task, result.message, null, partition)
+          fail(task, dispatchResult.message, null, partition)
         } else {
           val delay = retryPolicy.backoff.getOrElse(task.attempts) { retryPolicy.backoff.last() }
           val nextRetryAt = Instant.now().plus(delay)
-          fail(task, result.message, nextRetryAt, partition)
+          fail(task, dispatchResult.message, nextRetryAt, partition)
         }
         failedCounters.getOrPut("${partition.key}:${task.priority.name}") {
           meterRegistry.counter("outbox.tasks.failed", "partition", partition.key, "priority", task.priority.name)
