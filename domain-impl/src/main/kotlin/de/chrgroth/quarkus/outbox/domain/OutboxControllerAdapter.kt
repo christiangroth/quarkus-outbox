@@ -19,6 +19,7 @@ import jakarta.enterprise.event.Event
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import mu.KLogging
+import org.eclipse.microprofile.config.inject.ConfigProperty
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -38,6 +39,8 @@ class OutboxControllerAdapter(
   private val taskRetryScheduledEvents: Event<OutboxTaskRetryScheduledEvent>,
   private val taskFailedEvents: Event<OutboxTaskFailedEvent>,
   private val taskRescheduledEvents: Event<OutboxTaskRescheduledEvent>,
+  @param:ConfigProperty(name = "outbox.archive.enabled", defaultValue = "true")
+  private val archiveEnabled: Boolean,
 ) {
 
   private val retryPolicy = RetryPolicy()
@@ -158,8 +161,10 @@ class OutboxControllerAdapter(
   // --- OutboxRepositoryPort ---
 
   fun complete(task: OutboxTask, partition: ApplicationOutboxPartition) {
-    archivePort.append(task)
-    archivedTasksAddedCounter.increment()
+    if (archiveEnabled) {
+      archivePort.append(task)
+      archivedTasksAddedCounter.increment()
+    }
     taskPort.delete(task)
     partitionPort.decrementEventTypeCount(partition, task.eventType)
     taskDispatchedEvents.fireAsync(OutboxTaskDispatchedEvent(partition, task.eventType))
@@ -167,8 +172,10 @@ class OutboxControllerAdapter(
 
   fun fail(task: OutboxTask, error: String, nextRetryAt: Instant?, partition: ApplicationOutboxPartition) {
     if (nextRetryAt == null) {
-      archivePort.appendFailed(task, error)
-      archivedTasksAddedCounter.increment()
+      if (archiveEnabled) {
+        archivePort.appendFailed(task, error)
+        archivedTasksAddedCounter.increment()
+      }
       taskPort.delete(task)
       partitionPort.decrementEventTypeCount(partition, task.eventType)
       taskFailedEvents.fireAsync(OutboxTaskFailedEvent(partition, task.eventType))

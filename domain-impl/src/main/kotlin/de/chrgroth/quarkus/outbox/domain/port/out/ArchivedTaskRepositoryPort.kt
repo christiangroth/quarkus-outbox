@@ -7,5 +7,6 @@ interface ArchivedTaskRepositoryPort {
   fun append(task: OutboxTask)
   fun appendFailed(task: OutboxTask, error: String)
   fun deleteOlderThan(cutoff: Instant): Long
+  fun deleteAll(): Long
   fun count(): Long
 }

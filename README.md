@@ -14,6 +14,8 @@ A Quarkus library that implements the [Transactional Outbox Pattern](https://mic
 - **Scheduled archive cleanup** – completed and failed tasks are pruned after a configurable retention period
 - **Observability** – built-in Micrometer counters/gauges and slow MongoDB query detection
 
+See the [Release Notes](docs/releasenotes/RELEASENOTES.md) for details on what's changed in each version.
+
 ## Modules
 
 | Module | Artifact | Description |
@@ -106,6 +108,7 @@ outbox.archive.retention-days=90
 
 | Property | Default | Description |
 |----------|---------|-------------|
+| `outbox.archive.enabled` | `true` | Enables writing completed/failed tasks to the archive; also gates the retention cleanup cron job when using `adapter-in-scheduler`. When `false`, any existing entries in the archive collection are cleared once at startup |
 | `outbox.archive.retention-days` | `365` | Number of days to retain archived tasks (only when using `adapter-in-scheduler`) |
 | `outbox.reconciliation.enabled` | `true` | Enables the daily job that corrects drift in persisted per-partition event type counts (only when using `adapter-in-scheduler`) |
 | `outbox.mongodb.slow-query-threshold-ms` | `100` | Threshold in milliseconds above which a MongoDB query is logged as slow |

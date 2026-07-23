@@ -152,7 +152,9 @@ On every application start, `PartitionWorkerStarter.onStart()` (with `@Priority(
 
 ### 7.3 Archive Cleanup
 
-`ArchiverJob` runs daily at 01:00 UTC. It calls `ArchiverPort.deleteOlderThan(cutoff)` where `cutoff = now - outbox.archive.retention-days`. The `ArchiverAdapter` delegates to `ArchivedTaskRepositoryPort.deleteOlderThan()`.
+`ArchiverJob` runs daily at 01:00 UTC. It calls `ArchiverPort.deleteOlderThan(cutoff)` where `cutoff = now - outbox.archive.retention-days`. The `ArchiverAdapter` delegates to `ArchivedTaskRepositoryPort.deleteOlderThan()`. The job's `Scheduled.SkipPredicate` skips execution whenever `outbox.archive.enabled=false`.
+
+On startup, `ArchiveCleanupStarter.onStart()` checks `outbox.archive.enabled`. If it is `false` and the archive collection still holds entries (e.g. left over from a time when archiving was enabled), it clears the collection once via `ArchivedTaskRepositoryPort.deleteAll()`.
 
 ### 7.3a Event Type Count Maintenance
 

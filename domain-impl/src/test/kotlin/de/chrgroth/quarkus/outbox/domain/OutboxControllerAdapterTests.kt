@@ -54,11 +54,14 @@ class OutboxControllerAdapterTests {
     every { signal(any()) } just runs
   }
 
-  private val adapter = OutboxControllerAdapter(
+  private fun adapter(archiveEnabled: Boolean = true) = OutboxControllerAdapter(
     taskPort, archivePort, partitionPort, coroutinesPort, meterRegistry, applicationOutboxDispatcher,
     partitionActivatedEvents, partitionPausedEvents,
     taskEnqueuedEvents, taskDispatchedEvents, taskRetryScheduledEvents, taskFailedEvents, taskRescheduledEvents,
+    archiveEnabled,
   )
+
+  private val adapter = adapter()
 
   private val partition = object : ApplicationOutboxPartition {
     override val key = "test-partition"
@@ -371,6 +374,34 @@ class OutboxControllerAdapterTests {
     verify(exactly = 0) { archivePort.append(any()) }
     verify(exactly = 0) { taskPort.scheduleRetry(any(), any(), any()) }
     assertThat(meterRegistry.counter("outbox.tasks.paused", "partition", partition.key, "priority", OutboxEventPriority.MEDIUM.name).count()).isEqualTo(1.0)
+  }
+
+  // --- archive.enabled ---
+
+  @Test
+  fun `complete does not append to archive or increment archive counter when archiveEnabled is false`() {
+    val task = task()
+    every { taskPort.delete(task) } just runs
+    stubDecrementEventTypeCount()
+
+    adapter(archiveEnabled = false).complete(task, partition)
+
+    verify(exactly = 0) { archivePort.append(any()) }
+    verify { taskPort.delete(task) }
+    assertThat(meterRegistry.counter("outbox.archive.added").count()).isEqualTo(0.0)
+  }
+
+  @Test
+  fun `fail with no retry does not append to archive or increment archive counter when archiveEnabled is false`() {
+    val task = task()
+    every { taskPort.delete(task) } just runs
+    stubDecrementEventTypeCount()
+
+    adapter(archiveEnabled = false).fail(task, "permanent failure", null, partition)
+
+    verify(exactly = 0) { archivePort.appendFailed(any(), any()) }
+    verify { taskPort.delete(task) }
+    assertThat(meterRegistry.counter("outbox.archive.added").count()).isEqualTo(0.0)
   }
 
   @Test
