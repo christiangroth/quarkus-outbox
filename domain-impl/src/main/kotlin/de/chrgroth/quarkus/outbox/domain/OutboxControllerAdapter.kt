@@ -79,6 +79,11 @@ class OutboxControllerAdapter(
     partitionActivatedEvents.fireAsync(OutboxPartitionActivatedEvent(partition))
   }
 
+  fun scheduleRetryWakeupIfNeeded(partition: ApplicationOutboxPartition) {
+    val nextRetryAt = taskPort.findEarliestPendingRetryAt(partition) ?: return
+    scheduleRetrySignal(partition, nextRetryAt)
+  }
+
   private fun pausePartition(partition: ApplicationOutboxPartition, reason: String?, pausedUntil: Instant?) {
     getOrCreatePartitionStatusGauge(partition).set(0)
     partitionPausedEvents.fireAsync(OutboxPartitionPausedEvent(partition, reason, pausedUntil))
@@ -190,6 +195,15 @@ class OutboxControllerAdapter(
     } else {
       taskPort.scheduleRetry(task, error, nextRetryAt)
       taskRetryScheduledEvents.fireAsync(OutboxTaskRetryScheduledEvent(partition, task.eventType))
+      scheduleRetrySignal(partition, nextRetryAt)
+    }
+  }
+
+  private fun scheduleRetrySignal(partition: ApplicationOutboxPartition, nextRetryAt: Instant) {
+    val delayMs = maxOf(0L, nextRetryAt.toEpochMilli() - Instant.now().toEpochMilli())
+    coroutinesPort.getScope().launch {
+      delay(delayMs)
+      coroutinesPort.signal(partition)
     }
   }
 
