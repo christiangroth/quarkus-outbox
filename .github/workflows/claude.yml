@@ -52,6 +52,7 @@ jobs:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           track_progress: true
           branch_prefix: "claude-"
+          display_report: true
           claude_args: |
             --allowedTools Edit,MultiEdit,Write,TodoWrite,Glob,Grep,LS,Read,BashOutput,KillShell,Bash(git:*),Bash(./gradlew:*),Bash(gh:*)
             --append-system-prompt "Before opening a PR, check with 'gh pr list --head <branch>' whether one is already open for the branch - if so, use 'gh pr edit' instead of opening a second one. Follow CLAUDE.md for the build strategy (section 'Running Gradle in Time-Limited Agent Sessions') and the completion criteria (sections 'Task Completion' and 'Incremental Commits')."
