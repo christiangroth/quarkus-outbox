@@ -21,6 +21,7 @@ jobs:
       )
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
       pull-requests: write
       issues: write
@@ -29,7 +30,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -49,7 +50,12 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: "--allowedTools Edit,MultiEdit,Write,Glob,Grep,LS,Read,Bash(git:*),Bash(./gradlew:*),Bash(gh:*)"
+          track_progress: true
+          branch_prefix: "claude-"
+          display_report: true
+          claude_args: |
+            --allowedTools Edit,MultiEdit,Write,TodoWrite,Glob,Grep,LS,Read,BashOutput,KillShell,Bash(git:*),Bash(./gradlew:*),Bash(gh:*)
+            --append-system-prompt "Before opening a PR, check with 'gh pr list --head <branch>' whether one is already open for the branch - if so, use 'gh pr edit' instead of opening a second one. Follow CLAUDE.md for the build strategy (section 'Running Gradle in Time-Limited Agent Sessions') and the completion criteria (sections 'Task Completion' and 'Incremental Commits')."
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GHCR_PAT: ${{ secrets.GHCR_PAT }}
