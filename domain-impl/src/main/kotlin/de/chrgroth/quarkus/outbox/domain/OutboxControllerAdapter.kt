@@ -200,7 +200,7 @@ class OutboxControllerAdapter(
       partitionPort.decrementEventTypeCount(partition, task.eventType)
       taskFailedEvents.fireAsync(OutboxTaskFailedEvent(partition, task.eventType))
     } else {
-      logger.debug {
+      logger.info {
         "Task ${task.id} (partition=${partition.key}, event=${task.eventType}) failed, retry scheduled at $nextRetryAt " +
           "(attempt ${task.attempts + 1}): $error"
       }
