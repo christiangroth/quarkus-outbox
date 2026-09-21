@@ -86,6 +86,11 @@ class OutboxControllerAdapter(
 
   private fun pausePartition(partition: ApplicationOutboxPartition, reason: String?, pausedUntil: Instant?) {
     getOrCreatePartitionStatusGauge(partition).set(0)
+    logger.warn {
+      "Pausing partition ${partition.key}" +
+        (reason?.let { ", reason: $it" } ?: "") +
+        (pausedUntil?.let { ", until $it" } ?: ", indefinitely")
+    }
     partitionPausedEvents.fireAsync(OutboxPartitionPausedEvent(partition, reason, pausedUntil))
   }
 
@@ -147,6 +152,7 @@ class OutboxControllerAdapter(
           val delayMs = maxOf(0L, pausedUntil.toEpochMilli() - Instant.now().toEpochMilli())
           coroutinesPort.getScope().launch {
             delay(delayMs)
+            logger.info { "Resuming partition ${partition.key} after pause expired" }
             activatePartition(partition)
             coroutinesPort.signal(partition)
           }
@@ -185,6 +191,7 @@ class OutboxControllerAdapter(
 
   fun fail(task: OutboxTask, error: String, nextRetryAt: Instant?, partition: ApplicationOutboxPartition) {
     if (nextRetryAt == null) {
+      logger.warn { "Task ${task.id} (partition=${partition.key}, event=${task.eventType}) permanently failed after ${task.attempts + 1} attempt(s): $error" }
       if (archiveEnabled) {
         archivePort.appendFailed(task, error)
         archivedTasksAddedCounter.increment()
@@ -193,6 +200,10 @@ class OutboxControllerAdapter(
       partitionPort.decrementEventTypeCount(partition, task.eventType)
       taskFailedEvents.fireAsync(OutboxTaskFailedEvent(partition, task.eventType))
     } else {
+      logger.debug {
+        "Task ${task.id} (partition=${partition.key}, event=${task.eventType}) failed, retry scheduled at $nextRetryAt " +
+          "(attempt ${task.attempts + 1}): $error"
+      }
       taskPort.scheduleRetry(task, error, nextRetryAt)
       taskRetryScheduledEvents.fireAsync(OutboxTaskRetryScheduledEvent(partition, task.eventType))
       scheduleRetrySignal(partition, nextRetryAt)
