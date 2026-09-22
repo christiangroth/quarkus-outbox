@@ -12,6 +12,8 @@ class Task {
   lateinit var partition: String
   lateinit var eventType: String
   lateinit var deduplicationKey: String
+  var groupId: String? = null
+  var groupBucket: Int = 0
   lateinit var payload: String
   lateinit var status: String
   var attempts: Int = 0

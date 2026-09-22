@@ -113,13 +113,13 @@ class OutboxControllerAdapter(
   fun resetStaleProcessingTasks() = taskPort.resetStaleProcessing()
 
   @Suppress("TooGenericExceptionCaught")
-  fun dispatchTask(partition: ApplicationOutboxPartition): Boolean {
+  fun dispatchTask(partition: ApplicationOutboxPartition, workerIndex: Int = 0): Boolean {
     val partitionInfo = partitionPort.findOrCreate(partition)
     if (partitionInfo.status == OutboxPartitionStatus.PAUSED) {
       return false
     }
 
-    val task = taskPort.claim(partition)
+    val task = taskPort.claim(partition, workerIndex)
       ?: return false
 
     val dispatchResult = try {

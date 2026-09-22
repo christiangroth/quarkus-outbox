@@ -16,20 +16,23 @@ import java.util.concurrent.ConcurrentHashMap
 class CoroutinesAdapter : CoroutinesPort {
 
   private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-  private val channels: MutableMap<String, Channel<Unit>> = ConcurrentHashMap()
+  private val channels: MutableMap<String, MutableMap<Int, Channel<Unit>>> = ConcurrentHashMap()
 
   override fun getScope() = scope
 
   override fun signal(partition: ApplicationOutboxPartition) {
-    channelFor(partition).trySend(Unit)
+    val workerCount = maxOf(1, partition.workerCount)
+    for (workerIndex in 0 until workerCount) {
+      channelFor(partition, workerIndex).trySend(Unit)
+    }
   }
 
-  override suspend fun waitOnSignal(partition: ApplicationOutboxPartition) {
-    channelFor(partition).receive()
+  override suspend fun waitOnSignal(partition: ApplicationOutboxPartition, workerIndex: Int) {
+    channelFor(partition, workerIndex).receive()
   }
 
-  private fun channelFor(partition: ApplicationOutboxPartition): Channel<Unit> =
-    channels.getOrPut(partition.key) {
+  private fun channelFor(partition: ApplicationOutboxPartition, workerIndex: Int): Channel<Unit> =
+    channels.getOrPut(partition.key) { ConcurrentHashMap() }.getOrPut(workerIndex) {
       Channel(Channel.CONFLATED)
     }
 

@@ -21,7 +21,7 @@
 ## 2. Constraints
 
 - Requires Quarkus and a MongoDB instance.
-- Concurrency model is partition-based and coroutine-driven; one worker coroutine per partition.
+- Concurrency model is partition-based and coroutine-driven; a partition runs one or more worker coroutines (`ApplicationOutboxPartition.workerCount`, default `1`), each bound to a fixed group bucket (see [7.1a](#71a-per-task-groupid-ordering-and-concurrent-workers)).
 - The library is designed for embedding (not a standalone service); the application must provide an `ApplicationOutboxDispatcher` CDI bean.
 
 ---
@@ -75,7 +75,7 @@ The following diagram shows Quarkus Outbox within its operational context.
 | `OutboxControllerAdapter` | domain-impl | Orchestrates enqueue, dispatch, partition activation, metrics, and CDI events |
 | `ArchiverAdapter` | domain-impl | Implements `ArchiverPort`; delegates archive cleanup to persistence port |
 | `PartitionCountReconciliationAdapter` | domain-impl | Implements `PartitionCountReconciliationPort`; recomputes and corrects drifted per-partition event type counts |
-| `PartitionWorkerStarter` | domain-impl | Startup recovery + one coroutine worker per partition |
+| `PartitionWorkerStarter` | domain-impl | Startup recovery + `partition.workerCount` coroutine worker(s) per partition |
 | `CoroutinesAdapter` | adapter-out-executor | Manages the coroutine scope and per-partition `CONFLATED` channels |
 | `ArchiverJob` | adapter-in-scheduler | Scheduled daily job that prunes old archive entries via `ArchiverPort` |
 | `PartitionCountReconciliationJob` | adapter-in-scheduler | Scheduled daily job that corrects drifted event type counts via `PartitionCountReconciliationPort` |
@@ -138,6 +138,19 @@ All events carry `partition: ApplicationOutboxPartition`. Task events additional
    - **Pause** → reschedules the task (fires `OutboxTaskRescheduledEvent`), optionally pauses the partition, fires `OutboxPartitionPausedEvent`, schedules delayed reactivation when `pausedUntil` is set.
    - **Failed** → retries with backoff (fires `OutboxTaskRetryScheduledEvent`) or archives as permanently failed and decrements the event type counter (fires `OutboxTaskFailedEvent`).
 
+### 7.1a Per-task `groupId` Ordering and Concurrent Workers
+
+By default, a partition is processed by a single worker and all its tasks are strictly ordered relative to each other. `ApplicationOutboxEvent.groupId` (optional, defaults to `null`) narrows this ordering guarantee from per-partition to per `(partition, groupId)`:
+
+- `ApplicationOutboxPartition.workerCount` (default `1`) configures how many worker coroutines `PartitionWorkerStarter` starts for that partition, each identified by a `workerIndex` in `0 until workerCount`.
+- On enqueue, `TaskRepositoryAdapter` computes `groupBucket = GroupBucket.of(event.groupId, partition.workerCount)`: `hash(groupId) % workerCount` for tasks with a `groupId`, or always `0` for tasks without one. The bucket is persisted on the task.
+- `TaskRepositoryPort.claim(partition, workerIndex)` only claims tasks whose `groupBucket == workerIndex`, so two workers of the same partition never claim tasks of the same `groupId` concurrently, while tasks with different `groupId`s (different buckets) are dispatched in parallel.
+- Because ungrouped tasks always use bucket `0`, they are claimed exclusively by worker `0` and keep today's total per-partition ordering even when `workerCount > 1`.
+- `CoroutinesPort.signal(partition)` broadcasts to every worker's channel (`waitOnSignal(partition, workerIndex)`); a worker that has no eligible task in its bucket simply finds `claim()` returning `null` and goes back to waiting.
+- Partition-level concepts (pause/resume, retry/backoff, metrics, dead-letter/archive) remain scoped to the whole partition, unchanged: a `Paused` dispatch result still pauses every worker of the partition, and retry/backoff stays per-task.
+
+**Known limitation:** the mapping from `groupId` to bucket depends on `workerCount` at enqueue time. Changing `workerCount` on a partition with existing pending tasks reassigns bucket ownership only for newly-enqueued tasks (existing tasks keep their persisted `groupBucket`), which can temporarily mix old and new bucket assignments for the same `groupId` across a restart. This is acceptable because `workerCount` is intended as static, rarely-changed configuration; dynamic rebalancing is out of scope.
+
 ### 7.2 Startup Recovery
 
 On every application start, `PartitionWorkerStarter.onStart()` (with `@Priority(1)`):
@@ -148,7 +161,7 @@ On every application start, `PartitionWorkerStarter.onStart()` (with `@Priority(
    - If `PAUSED` and `pausedUntil` is `null` → leaves partition paused (manual pause).
    - If `PAUSED` and `pausedUntil` has passed → immediately reactivates.
    - If `PAUSED` and `pausedUntil` is in the future → schedules a delayed coroutine to reactivate later.
-3. Starts one coroutine worker per partition.
+3. Starts `partition.workerCount` (default `1`) coroutine workers per partition, one per `workerIndex`.
 
 ### 7.3 Archive Cleanup
 
@@ -242,6 +255,7 @@ Before inserting a task, `TaskRepositoryAdapter.enqueue` checks for an existing 
 | ADR-6 | CDI async events | Decoupled lifecycle notifications; applications observe only the events they care about |
 | ADR-7 | Hexagonal modules | Each module has a single clear responsibility; adapters are interchangeable |
 | ADR-8 | Incremental event type counters with periodic reconciliation | Avoids a per-partition aggregation query on every `partitionInfos()` call; a daily reconciliation job corrects drift from the lack of cross-write transactions |
+| ADR-9 | Static per-partition `workerCount` with `groupId`-based bucket hashing | Enables concurrent processing of unrelated `groupId`s within one partition while keeping per-`(partition, groupId)` ordering, without requiring statically-enumerable partitions per group |
 
 ---
 
