@@ -21,6 +21,7 @@ class Task {
   lateinit var priority: String
   var priorityOrder: Int = 1
   var lastError: String? = null
+  var notBefore: Instant? = null
 }
 
 @MongoEntity(collection = "outbox_archive")
