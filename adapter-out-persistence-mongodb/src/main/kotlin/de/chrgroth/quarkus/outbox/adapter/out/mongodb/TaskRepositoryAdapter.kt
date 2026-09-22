@@ -28,13 +28,14 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
   @Inject
   lateinit var repository: TaskRepository
 
-  override fun claim(partition: ApplicationOutboxPartition): OutboxTask? {
+  override fun claim(partition: ApplicationOutboxPartition, workerIndex: Int): OutboxTask? {
     val now = Instant.now()
     return metricsRecorder.timed("outbox.task.claim") {
       repository.mongoCollection().findOneAndUpdate(
         Filters.and(
           Filters.eq("partition", partition.key),
           Filters.eq("status", OutboxTaskStatus.PENDING.name),
+          Filters.eq("groupBucket", workerIndex),
           Filters.or(
             Filters.exists("nextRetryAt", false),
             Filters.eq("nextRetryAt", null),
@@ -81,12 +82,15 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
     }
 
     val now = Instant.now()
+    val groupId = event.groupId
     metricsRecorder.timed("outbox.task.insert") {
       repository.persist(Task().apply {
         id = UUID.randomUUID().toString()
         this.partition = partition.key
         eventType = event.key
         this.deduplicationKey = deduplicationKey
+        this.groupId = groupId
+        this.groupBucket = GroupBucket.of(groupId, partition.workerCount)
         this.payload = payload
         status = OutboxTaskStatus.PENDING.name
         attempts = 0
@@ -191,6 +195,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
     eventType = eventType,
     payload = payload,
     deduplicationKey = deduplicationKey,
+    groupId = groupId,
     status = OutboxTaskStatus.valueOf(status),
     attempts = attempts,
     createdAt = createdAt,
