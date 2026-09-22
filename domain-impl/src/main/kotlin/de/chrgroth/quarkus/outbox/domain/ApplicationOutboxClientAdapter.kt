@@ -3,6 +3,7 @@ package de.chrgroth.quarkus.outbox.domain
 import de.chrgroth.quarkus.outbox.domain.port.out.PartitionRepositoryPort
 import de.chrgroth.quarkus.outbox.domain.port.out.TaskRepositoryPort
 import jakarta.enterprise.context.ApplicationScoped
+import java.time.Instant
 
 @ApplicationScoped
 class ApplicationOutboxClientAdapter(
@@ -11,9 +12,15 @@ class ApplicationOutboxClientAdapter(
   private val taskPort: TaskRepositoryPort,
 ) : ApplicationOutboxClient {
 
-  override fun enqueue(event: ApplicationOutboxEvent) {
-    controllerAdapter.enqueue(event.partition, event, event.serializePayload, event.priority)
+  override fun enqueue(event: ApplicationOutboxEvent, notBefore: Instant?) {
+    controllerAdapter.enqueue(event.partition, event, event.serializePayload, event.priority, notBefore)
   }
+
+  override fun cancel(partition: ApplicationOutboxPartition, deduplicationKey: String): Boolean =
+    controllerAdapter.cancel(partition, deduplicationKey)
+
+  override fun reschedule(partition: ApplicationOutboxPartition, deduplicationKey: String, notBefore: Instant?): Boolean =
+    controllerAdapter.reschedule(partition, deduplicationKey, notBefore)
 
   override fun partitionInfos(): List<OutboxPartitionInfo> =
     partitionPort.findAllPartitions()

@@ -21,6 +21,7 @@ data class OutboxTask(
     val nextRetryAt: Instant?,
     val priority: OutboxEventPriority,
     val lastError: String?,
+    val notBefore: Instant? = null,
 )
 
 /**

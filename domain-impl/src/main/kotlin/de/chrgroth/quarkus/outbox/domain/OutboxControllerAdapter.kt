@@ -58,17 +58,41 @@ class OutboxControllerAdapter(
     event: ApplicationOutboxEvent,
     payload: String,
     priority: OutboxEventPriority,
+    notBefore: Instant? = null,
   ): Boolean {
-    val inserted = taskPort.enqueue(partition, event, payload, priority)
+    val inserted = taskPort.enqueue(partition, event, payload, priority, notBefore)
     if (inserted) {
       partitionPort.incrementEventTypeCount(partition, event.key)
       coroutinesPort.signal(partition)
+      if (notBefore != null && notBefore.isAfter(Instant.now())) {
+        scheduleSignalAt(partition, notBefore)
+      }
       enqueuedCounters.getOrPut("${partition.key}:${priority.name}") {
         meterRegistry.counter("outbox.tasks.enqueued", "partition", partition.key, "priority", priority.name)
       }.increment()
       taskEnqueuedEvents.fireAsync(OutboxTaskEnqueuedEvent(partition, event.key))
     }
     return inserted
+  }
+
+  // --- OutboxControllerPort: cancel / reschedule by deduplication key ---
+
+  fun cancel(partition: ApplicationOutboxPartition, deduplicationKey: String): Boolean {
+    val cancelled = taskPort.cancelByDeduplicationKey(partition, deduplicationKey) ?: return false
+    partitionPort.decrementEventTypeCount(partition, cancelled.eventType)
+    logger.info { "Cancelled pending task ${cancelled.id} (partition=${partition.key}, deduplicationKey=$deduplicationKey)" }
+    return true
+  }
+
+  fun reschedule(partition: ApplicationOutboxPartition, deduplicationKey: String, notBefore: Instant?): Boolean {
+    val rescheduled = taskPort.rescheduleByDeduplicationKey(partition, deduplicationKey, notBefore) ?: return false
+    if (notBefore != null && notBefore.isAfter(Instant.now())) {
+      scheduleSignalAt(partition, notBefore)
+    } else {
+      coroutinesPort.signal(partition)
+    }
+    logger.info { "Rescheduled pending task ${rescheduled.id} (partition=${partition.key}, deduplicationKey=$deduplicationKey) to $notBefore" }
+    return true
   }
 
   // --- OutboxControllerPort: activatePartition ---
@@ -81,7 +105,12 @@ class OutboxControllerAdapter(
 
   fun scheduleRetryWakeupIfNeeded(partition: ApplicationOutboxPartition) {
     val nextRetryAt = taskPort.findEarliestPendingRetryAt(partition) ?: return
-    scheduleRetrySignal(partition, nextRetryAt)
+    scheduleSignalAt(partition, nextRetryAt)
+  }
+
+  fun scheduleDelayedWakeupIfNeeded(partition: ApplicationOutboxPartition) {
+    val nextNotBeforeAt = taskPort.findEarliestPendingNotBeforeAt(partition) ?: return
+    scheduleSignalAt(partition, nextNotBeforeAt)
   }
 
   private fun pausePartition(partition: ApplicationOutboxPartition, reason: String?, pausedUntil: Instant?) {
@@ -206,12 +235,13 @@ class OutboxControllerAdapter(
       }
       taskPort.scheduleRetry(task, error, nextRetryAt)
       taskRetryScheduledEvents.fireAsync(OutboxTaskRetryScheduledEvent(partition, task.eventType))
-      scheduleRetrySignal(partition, nextRetryAt)
+      scheduleSignalAt(partition, nextRetryAt)
     }
   }
 
-  private fun scheduleRetrySignal(partition: ApplicationOutboxPartition, nextRetryAt: Instant) {
-    val delayMs = maxOf(0L, nextRetryAt.toEpochMilli() - Instant.now().toEpochMilli())
+  /** Schedules a coroutine that signals [partition] once [at] is reached (retry, delayed dispatch, or reschedule). */
+  private fun scheduleSignalAt(partition: ApplicationOutboxPartition, at: Instant) {
+    val delayMs = maxOf(0L, at.toEpochMilli() - Instant.now().toEpochMilli())
     coroutinesPort.getScope().launch {
       delay(delayMs)
       coroutinesPort.signal(partition)

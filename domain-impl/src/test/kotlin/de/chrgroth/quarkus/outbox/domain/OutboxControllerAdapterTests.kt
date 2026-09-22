@@ -120,7 +120,7 @@ class OutboxControllerAdapterTests {
   @Test
   fun `enqueue signals partition and increments counter when task is inserted`() {
     val event = testEvent()
-    every { taskPort.enqueue(partition, any(), any(), any()) } returns true
+    every { taskPort.enqueue(partition, any(), any(), any(), any()) } returns true
     stubIncrementEventTypeCount()
 
     val result = adapter.enqueue(partition, event, "payload", OutboxEventPriority.MEDIUM)
@@ -134,7 +134,7 @@ class OutboxControllerAdapterTests {
 
   @Test
   fun `enqueue does not signal or increment counter when task is rejected due to deduplication`() {
-    every { taskPort.enqueue(partition, any(), any(), any()) } returns false
+    every { taskPort.enqueue(partition, any(), any(), any(), any()) } returns false
 
     val result = adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.MEDIUM)
 
@@ -147,17 +147,17 @@ class OutboxControllerAdapterTests {
 
   @Test
   fun `enqueue passes priority to repository`() {
-    every { taskPort.enqueue(partition, any(), any(), OutboxEventPriority.HIGH) } returns true
+    every { taskPort.enqueue(partition, any(), any(), OutboxEventPriority.HIGH, any()) } returns true
     stubIncrementEventTypeCount()
 
     adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.HIGH)
 
-    verify { taskPort.enqueue(partition, any(), any(), OutboxEventPriority.HIGH) }
+    verify { taskPort.enqueue(partition, any(), any(), OutboxEventPriority.HIGH, any()) }
   }
 
   @Test
   fun `enqueue with HIGH priority increments high priority counter`() {
-    every { taskPort.enqueue(partition, any(), any(), OutboxEventPriority.HIGH) } returns true
+    every { taskPort.enqueue(partition, any(), any(), OutboxEventPriority.HIGH, any()) } returns true
     stubIncrementEventTypeCount()
 
     adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.HIGH)
@@ -167,12 +167,101 @@ class OutboxControllerAdapterTests {
 
   @Test
   fun `enqueue with LOW priority increments low priority counter`() {
-    every { taskPort.enqueue(partition, any(), any(), OutboxEventPriority.LOW) } returns true
+    every { taskPort.enqueue(partition, any(), any(), OutboxEventPriority.LOW, any()) } returns true
     stubIncrementEventTypeCount()
 
     adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.LOW)
 
     assertThat(meterRegistry.counter("outbox.tasks.enqueued", "partition", partition.key, "priority", OutboxEventPriority.LOW.name).count()).isEqualTo(1.0)
+  }
+
+  @Test
+  fun `enqueue passes notBefore to repository`() {
+    val notBefore = Instant.now().plusSeconds(300)
+    val captured = mutableListOf<Instant>()
+    every { taskPort.enqueue(partition, any(), any(), any(), capture(captured)) } returns true
+    stubIncrementEventTypeCount()
+
+    adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.MEDIUM, notBefore)
+
+    assertThat(captured.first()).isEqualTo(notBefore)
+  }
+
+  @Test
+  fun `enqueue with future notBefore schedules a delayed signal in addition to the immediate one`() {
+    val notBefore = Instant.now().plusMillis(50)
+    every { taskPort.enqueue(partition, any(), any(), any(), any()) } returns true
+    stubIncrementEventTypeCount()
+
+    adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.MEDIUM, notBefore)
+
+    verify(timeout = 2000, atLeast = 2) { coroutinesPort.signal(partition) }
+  }
+
+  @Test
+  fun `enqueue with null notBefore only signals once immediately`() {
+    every { taskPort.enqueue(partition, any(), any(), any(), any()) } returns true
+    stubIncrementEventTypeCount()
+
+    adapter.enqueue(partition, testEvent(), "payload", OutboxEventPriority.MEDIUM, null)
+
+    verify(exactly = 1) { coroutinesPort.signal(partition) }
+  }
+
+  // --- cancel ---
+
+  @Test
+  fun `cancel returns false and does not decrement counter when no pending task exists`() {
+    every { taskPort.cancelByDeduplicationKey(partition, "dedup-1") } returns null
+
+    val result = adapter.cancel(partition, "dedup-1")
+
+    assertThat(result).isFalse()
+    verify(exactly = 0) { partitionPort.decrementEventTypeCount(any(), any()) }
+  }
+
+  @Test
+  fun `cancel returns true and decrements counter when pending task is cancelled`() {
+    val cancelledTask = task()
+    every { taskPort.cancelByDeduplicationKey(partition, "dedup-1") } returns cancelledTask
+    stubDecrementEventTypeCount()
+
+    val result = adapter.cancel(partition, "dedup-1")
+
+    assertThat(result).isTrue()
+    verify { partitionPort.decrementEventTypeCount(partition, cancelledTask.eventType) }
+  }
+
+  // --- reschedule ---
+
+  @Test
+  fun `reschedule returns false when no pending task exists`() {
+    every { taskPort.rescheduleByDeduplicationKey(partition, "dedup-1", any()) } returns null
+
+    val result = adapter.reschedule(partition, "dedup-1", Instant.now().plusSeconds(60))
+
+    assertThat(result).isFalse()
+  }
+
+  @Test
+  fun `reschedule signals immediately when notBefore is null`() {
+    every { taskPort.rescheduleByDeduplicationKey(partition, "dedup-1", null) } returns task()
+
+    val result = adapter.reschedule(partition, "dedup-1", null)
+
+    assertThat(result).isTrue()
+    verify { coroutinesPort.signal(partition) }
+  }
+
+  @Test
+  fun `reschedule schedules a delayed signal when notBefore is in the future`() {
+    val notBefore = Instant.now().plusMillis(50)
+    every { taskPort.rescheduleByDeduplicationKey(partition, "dedup-1", notBefore) } returns task()
+
+    val result = adapter.reschedule(partition, "dedup-1", notBefore)
+
+    assertThat(result).isTrue()
+    verify(timeout = 2000) { coroutinesPort.signal(partition) }
   }
 
   // --- activatePartition ---
@@ -465,6 +554,24 @@ class OutboxControllerAdapterTests {
     every { taskPort.findEarliestPendingRetryAt(partition) } returns Instant.now()
 
     adapter.scheduleRetryWakeupIfNeeded(partition)
+
+    verify(timeout = 2000) { coroutinesPort.signal(partition) }
+  }
+
+  @Test
+  fun `scheduleDelayedWakeupIfNeeded does nothing when no pending delayed task exists`() {
+    every { taskPort.findEarliestPendingNotBeforeAt(partition) } returns null
+
+    adapter.scheduleDelayedWakeupIfNeeded(partition)
+
+    verify(exactly = 0) { coroutinesPort.getScope() }
+  }
+
+  @Test
+  fun `scheduleDelayedWakeupIfNeeded schedules a delayed signal for the earliest pending notBefore`() {
+    every { taskPort.findEarliestPendingNotBeforeAt(partition) } returns Instant.now()
+
+    adapter.scheduleDelayedWakeupIfNeeded(partition)
 
     verify(timeout = 2000) { coroutinesPort.signal(partition) }
   }
