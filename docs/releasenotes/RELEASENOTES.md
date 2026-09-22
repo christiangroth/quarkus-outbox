@@ -1,3 +1,11 @@
+# 0.8.5 (2026.09.22)
+
+## Bugfixes / Chore
+* issue-29-cleanup: Partition pausing and permanent task failures are now logged, so operators can see these events without relying on metrics alone.
+
+
+
+---
 # 0.8.4 (2026.07.23)
 
 ## Bugfixes / Chore
