@@ -76,7 +76,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
     }
 
     if (existing != null) {
-      logger.debug { "Skipping duplicate outbox task: partition=${partition.key}, deduplicationKey=$deduplicationKey" }
+      logger.info { "Skipping duplicate outbox task: partition=${partition.key}, deduplicationKey=$deduplicationKey" }
       return false
     }
 
