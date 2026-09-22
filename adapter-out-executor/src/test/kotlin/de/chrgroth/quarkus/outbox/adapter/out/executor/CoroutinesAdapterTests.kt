@@ -85,4 +85,53 @@ class CoroutinesAdapterTests {
       assertThat(partitionBSignalled).isFalse()
     }
   }
+
+  @Test
+  fun `signal broadcasts to every worker of a partition with multiple workers`() {
+    val multiWorkerPartition = object : ApplicationOutboxPartition {
+      override val key = "multi-worker-partition"
+      override val workerCount = 3
+    }
+
+    runBlocking {
+      adapter.signal(multiWorkerPartition)
+
+      withTimeout(1000) {
+        adapter.waitOnSignal(multiWorkerPartition, 0)
+        adapter.waitOnSignal(multiWorkerPartition, 1)
+        adapter.waitOnSignal(multiWorkerPartition, 2)
+      }
+    }
+  }
+
+  @Test
+  fun `waitOnSignal for a workerIndex of one partition does not receive a signal for the same workerIndex of another partition`() {
+    val partitionAMultiWorker = object : ApplicationOutboxPartition {
+      override val key = "isolated-partition-a"
+      override val workerCount = 2
+    }
+    val partitionBMultiWorker = object : ApplicationOutboxPartition {
+      override val key = "isolated-partition-b"
+      override val workerCount = 2
+    }
+
+    runBlocking {
+      adapter.signal(partitionAMultiWorker)
+
+      var partitionBWorker1Signalled = false
+      val job = launch {
+        try {
+          withTimeout(100) {
+            adapter.waitOnSignal(partitionBMultiWorker, 1)
+            partitionBWorker1Signalled = true
+          }
+        } catch (_: kotlinx.coroutines.TimeoutCancellationException) {
+          // expected - partition B worker 1 was not signalled
+        }
+      }
+      job.join()
+
+      assertThat(partitionBWorker1Signalled).isFalse()
+    }
+  }
 }

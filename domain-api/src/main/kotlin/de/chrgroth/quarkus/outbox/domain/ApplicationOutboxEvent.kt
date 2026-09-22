@@ -38,6 +38,19 @@ interface ApplicationOutboxEvent {
   /** A key used to detect and discard duplicate events within the same partition. */
   val deduplicationKey: String
 
+  /**
+   * An optional identifier that narrows the ordering guarantee from per-partition to
+   * per (partition, groupId). Tasks sharing the same [groupId] within a partition are always
+   * claimed and dispatched strictly sequentially, in enqueue order, even when the partition
+   * runs with multiple workers (see [ApplicationOutboxPartition.workerCount]). Tasks with
+   * different `groupId`s (or no `groupId` at all) may be processed concurrently.
+   *
+   * Defaults to `null`, which keeps today's behavior: events without a `groupId` are subject
+   * to the same total ordering across the whole partition as before.
+   */
+  val groupId: String?
+    get() = null
+
   /** The serialized payload of the event to store and pass to the dispatcher. */
   val serializePayload: String
 }

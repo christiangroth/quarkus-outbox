@@ -7,7 +7,9 @@ interface CoroutinesPort {
 
   fun getScope(): CoroutineScope
 
+  /** Signals every worker of [partition] (see [ApplicationOutboxPartition.workerCount]). */
   fun signal(partition: ApplicationOutboxPartition)
 
-  suspend fun waitOnSignal(partition: ApplicationOutboxPartition)
+  /** Suspends until worker [workerIndex] of [partition] is signalled. */
+  suspend fun waitOnSignal(partition: ApplicationOutboxPartition, workerIndex: Int = 0)
 }

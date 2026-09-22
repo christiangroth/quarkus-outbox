@@ -168,6 +168,7 @@ class ApplicationOutboxClientAdapterTests {
       eventType = "TYPE_A",
       payload = "{}",
       deduplicationKey = "dedup-1",
+      groupId = null,
       status = OutboxTaskStatus.PENDING,
       attempts = 0,
       createdAt = java.time.Instant.EPOCH,

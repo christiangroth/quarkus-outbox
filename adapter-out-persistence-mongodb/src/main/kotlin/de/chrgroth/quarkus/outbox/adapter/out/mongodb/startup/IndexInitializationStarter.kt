@@ -33,9 +33,9 @@ class IndexInitializationStarter {
       tasks.mongoCollection(),
       listOf(
         OutboxIndex(
-          Document("partition", 1).append("status", 1).append("priorityOrder", 1).append("createdAt", 1)
+          Document("partition", 1).append("status", 1).append("groupBucket", 1).append("priorityOrder", 1).append("createdAt", 1)
             .append("nextRetryAt", 1).append("notBefore", 1),
-          "partition_1_status_1_priorityOrder_1_createdAt_1_nextRetryAt_1_notBefore_1",
+          "partition_1_status_1_groupBucket_1_priorityOrder_1_createdAt_1_nextRetryAt_1_notBefore_1",
         ),
         OutboxIndex(
           Document("partition", 1).append("deduplicationKey", 1).append("status", 1),

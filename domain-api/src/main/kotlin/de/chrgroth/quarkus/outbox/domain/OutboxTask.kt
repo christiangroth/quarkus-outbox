@@ -14,6 +14,7 @@ data class OutboxTask(
     val eventType: String,
     val payload: String,
     val deduplicationKey: String,
+    val groupId: String?,
     val status: OutboxTaskStatus,
     val attempts: Int,
     val createdAt: Instant,

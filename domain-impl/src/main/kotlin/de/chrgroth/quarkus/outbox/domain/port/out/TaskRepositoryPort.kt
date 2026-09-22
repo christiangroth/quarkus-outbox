@@ -7,7 +7,13 @@ import de.chrgroth.quarkus.outbox.domain.OutboxTask
 import java.time.Instant
 
 interface TaskRepositoryPort {
-  fun claim(partition: ApplicationOutboxPartition): OutboxTask?
+  /**
+   * Claims the next eligible task for the given [partition] whose group bucket matches
+   * [workerIndex], i.e. `hash(groupId) % workerCount == workerIndex` (ungrouped tasks always
+   * use bucket `0`). This ensures two workers of the same partition never claim tasks
+   * belonging to the same `groupId` concurrently.
+   */
+  fun claim(partition: ApplicationOutboxPartition, workerIndex: Int): OutboxTask?
   fun delete(task: OutboxTask)
   fun enqueue(
     partition: ApplicationOutboxPartition,

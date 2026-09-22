@@ -78,6 +78,7 @@ class OutboxControllerAdapterTests {
     eventType = "TEST_EVENT",
     payload = """{"foo":"bar"}""",
     deduplicationKey = "dedup-1",
+    groupId = null,
     status = OutboxTaskStatus.PROCESSING,
     attempts = attempts,
     createdAt = Instant.now(),
@@ -297,7 +298,7 @@ class OutboxControllerAdapterTests {
   fun `dispatchTask pausing sets gauge to zero and fires paused event on pause result`() {
     val task = task()
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
-    every { taskPort.claim(partition) } returns task
+    every { taskPort.claim(partition, 0) } returns task
     stubDeserialize()
     every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Paused(reason = "my-reason", pausedUntil = Instant.now().plusSeconds(30))
     every { partitionPort.pause(partition, any(), any()) } just runs
@@ -316,9 +317,25 @@ class OutboxControllerAdapterTests {
   @Test
   fun `dispatchTask returns false when no task is available`() {
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
-    every { taskPort.claim(partition) } returns null
+    every { taskPort.claim(partition, 0) } returns null
 
     assertThat(adapter.dispatchTask(partition)).isFalse()
+  }
+
+  @Test
+  fun `dispatchTask claims from the worker's own bucket via workerIndex`() {
+    val task = task()
+    every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
+    every { taskPort.claim(partition, 2) } returns task
+    stubDeserialize()
+    every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Success
+    every { archivePort.append(task) } just runs
+    every { taskPort.delete(task) } just runs
+    stubDecrementEventTypeCount()
+
+    assertThat(adapter.dispatchTask(partition, workerIndex = 2)).isTrue()
+    verify { taskPort.claim(partition, 2) }
+    verify(exactly = 0) { taskPort.claim(partition, 0) }
   }
 
   @Test
@@ -331,14 +348,14 @@ class OutboxControllerAdapterTests {
     )
 
     assertThat(adapter.dispatchTask(partition)).isFalse()
-    verify(exactly = 0) { taskPort.claim(any()) }
+    verify(exactly = 0) { taskPort.claim(any(), any()) }
   }
 
   @Test
   fun `dispatchTask archives task and increments processedCounter on success`() {
     val task = task()
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
-    every { taskPort.claim(partition) } returns task
+    every { taskPort.claim(partition, 0) } returns task
     stubDeserialize()
     every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Success
     every { archivePort.append(task) } just runs
@@ -359,7 +376,7 @@ class OutboxControllerAdapterTests {
     val task = task()
     val deserializedEvent = testEvent()
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
-    every { taskPort.claim(partition) } returns task
+    every { taskPort.claim(partition, 0) } returns task
     stubDeserialize(deserializedEvent)
     every { applicationOutboxDispatcher.dispatch(deserializedEvent) } returns DispatchResult.Success
     every { archivePort.append(task) } just runs
@@ -376,7 +393,7 @@ class OutboxControllerAdapterTests {
   fun `dispatchTask schedules retry and increments failedCounter when below maxAttempts`() {
     val task = task(attempts = 0)
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
-    every { taskPort.claim(partition) } returns task
+    every { taskPort.claim(partition, 0) } returns task
     stubDeserialize()
     every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Failed("dispatch failed")
     val capturedNextRetryAt = mutableListOf<Instant>()
@@ -392,7 +409,7 @@ class OutboxControllerAdapterTests {
   fun `dispatchTask archives as failed and increments failedCounter when attempts reach maxAttempts`() {
     val task = task(attempts = 4)
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
-    every { taskPort.claim(partition) } returns task
+    every { taskPort.claim(partition, 0) } returns task
     stubDeserialize()
     every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Failed("permanent failure")
     every { archivePort.appendFailed(task, "permanent failure") } just runs
@@ -412,7 +429,7 @@ class OutboxControllerAdapterTests {
   fun `dispatchTask treats exception from dispatch as failed and schedules retry`() {
     val task = task(attempts = 0)
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
-    every { taskPort.claim(partition) } returns task
+    every { taskPort.claim(partition, 0) } returns task
     stubDeserialize()
     every { applicationOutboxDispatcher.dispatch(any()) } throws IllegalStateException("boom")
     val capturedNextRetryAt = mutableListOf<Instant>()
@@ -428,7 +445,7 @@ class OutboxControllerAdapterTests {
   fun `dispatchTask treats exception from deserialize as failed and archives after maxAttempts`() {
     val task = task(attempts = 4)
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
-    every { taskPort.claim(partition) } returns task
+    every { taskPort.claim(partition, 0) } returns task
     every { applicationOutboxDispatcher.deserialize(any(), any(), any()) } throws IllegalStateException("boom")
     every { archivePort.appendFailed(task, "boom") } just runs
     every { taskPort.delete(task) } just runs
@@ -446,7 +463,7 @@ class OutboxControllerAdapterTests {
   fun `dispatchTask uses backoff list correctly for retry delays`() {
     val task = task(attempts = 1)
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
-    every { taskPort.claim(partition) } returns task
+    every { taskPort.claim(partition, 0) } returns task
     stubDeserialize()
     every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Failed("fail")
     val capturedNextRetryAt = mutableListOf<Instant>()
@@ -465,7 +482,7 @@ class OutboxControllerAdapterTests {
   fun `dispatchTask uses last backoff entry when attempt index reaches end of backoff list`() {
     val task = task(attempts = 3)
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
-    every { taskPort.claim(partition) } returns task
+    every { taskPort.claim(partition, 0) } returns task
     stubDeserialize()
     every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Failed("fail")
     val capturedNextRetryAt = mutableListOf<Instant>()
@@ -482,7 +499,7 @@ class OutboxControllerAdapterTests {
   fun `dispatchTask pauses partition reschedules task increments pausedCounter and fires paused event`() {
     val task = task()
     every { partitionPort.findOrCreate(partition) } returns activePartitionInfo()
-    every { taskPort.claim(partition) } returns task
+    every { taskPort.claim(partition, 0) } returns task
     stubDeserialize()
     every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Paused(reason = "my-reason", pausedUntil = Instant.now().plusSeconds(30))
     every { partitionPort.pause(partition, "my-reason", any()) } just runs
@@ -589,7 +606,7 @@ class OutboxControllerAdapterTests {
     // once inside getOrCreatePartitionStatusGauge during pausePartition, and once for the
     // second dispatchTask call's partition status check which should return paused.
     every { partitionPort.findOrCreate(partition) } returnsMany listOf(activePartitionInfo(), activePartitionInfo(), pausedInfo)
-    every { taskPort.claim(partition) } returns task
+    every { taskPort.claim(partition, 0) } returns task
     stubDeserialize()
     every { applicationOutboxDispatcher.dispatch(any()) } returns DispatchResult.Paused(pausedUntil = Instant.now().plusSeconds(30))
     every { partitionPort.pause(partition, null, any()) } just runs
@@ -599,6 +616,6 @@ class OutboxControllerAdapterTests {
     assertThat(adapter.dispatchTask(partition)).isFalse()
     assertThat(adapter.dispatchTask(partition)).isFalse()
     verify(exactly = 1) { partitionPort.pause(partition, null, any()) }
-    verify(exactly = 1) { taskPort.claim(any()) }
+    verify(exactly = 1) { taskPort.claim(any(), any()) }
   }
 }

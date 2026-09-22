@@ -73,18 +73,25 @@ class PartitionWorkerStarter(
     coroutinesPort.signal(partition)
   }
 
-  @Suppress("TooGenericExceptionCaught")
   private fun startPartitionWorker(partition: ApplicationOutboxPartition) {
-    logger.info { "Starting partition worker for ${partition.key}" }
+    val workerCount = maxOf(1, partition.workerCount)
+    logger.info { "Starting $workerCount partition worker(s) for ${partition.key}" }
+    repeat(workerCount) { workerIndex ->
+      startPartitionWorker(partition, workerIndex)
+    }
+  }
+
+  @Suppress("TooGenericExceptionCaught")
+  private fun startPartitionWorker(partition: ApplicationOutboxPartition, workerIndex: Int) {
     coroutinesPort.getScope().launch {
       val throttleInterval = partition.throttleInterval
       while (isActive) {
         try {
-          coroutinesPort.waitOnSignal(partition)
+          coroutinesPort.waitOnSignal(partition, workerIndex)
 
           var processed: Boolean
           do {
-            processed = executionAdapter.dispatchTask(partition)
+            processed = executionAdapter.dispatchTask(partition, workerIndex)
 
             if (processed && throttleInterval != null) {
               delay(throttleInterval.toMillis())
@@ -93,7 +100,7 @@ class PartitionWorkerStarter(
         } catch (e: CancellationException) {
           throw e
         } catch (e: Exception) {
-          logger.error(e) { "Unexpected error in partition worker for ${partition.key}, continuing" }
+          logger.error(e) { "Unexpected error in partition worker $workerIndex for ${partition.key}, continuing" }
         }
       }
     }

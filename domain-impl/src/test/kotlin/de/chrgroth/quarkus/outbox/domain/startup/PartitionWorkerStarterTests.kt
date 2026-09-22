@@ -16,6 +16,7 @@ import io.mockk.verify
 import io.quarkus.runtime.StartupEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -224,5 +225,50 @@ class PartitionWorkerStarterTests {
 
     assertThat(waitCount.get()).isGreaterThanOrEqualTo(2)
     assertThat(testScope.isActive).isTrue()
+  }
+
+  @Test
+  fun `onStart starts one worker per configured workerCount and dispatches with the matching workerIndex`() {
+    val multiWorkerPartition = object : ApplicationOutboxPartition {
+      override val key = "multi-worker-partition"
+      override val workerCount = 3
+    }
+    every { executionAdapter.resetStaleProcessingTasks() } just runs
+    every { application.getAllPartitions() } returns listOf(multiWorkerPartition)
+    every { partitionPort.findOrCreate(multiWorkerPartition) } returns OutboxPartitionInfo(
+      key = multiWorkerPartition.key,
+      status = OutboxPartitionStatus.ACTIVE,
+      statusReason = null,
+      pausedUntil = null,
+    )
+    every { executionAdapter.activatePartition(multiWorkerPartition) } just runs
+    every { executionAdapter.scheduleRetryWakeupIfNeeded(multiWorkerPartition) } just runs
+    every { executionAdapter.scheduleDelayedWakeupIfNeeded(multiWorkerPartition) } just runs
+
+    val observedWorkerIndices = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
+    listOf(0, 1, 2).forEach { workerIndex ->
+      coEvery { coroutinesPort.waitOnSignal(multiWorkerPartition, workerIndex) } coAnswers {
+        observedWorkerIndices.add(workerIndex)
+        if (observedWorkerIndices.size < 3) {
+          // keep looping until all three workers have registered a wait, then park
+          delay(10)
+        } else {
+          awaitCancellation()
+        }
+      }
+    }
+    every { executionAdapter.dispatchTask(multiWorkerPartition, any()) } returns false
+
+    recovery.onStart(startupEvent)
+
+    runBlocking {
+      withTimeout(2000) {
+        while (observedWorkerIndices.size < 3) {
+          delay(10)
+        }
+      }
+    }
+
+    assertThat(observedWorkerIndices).containsExactlyInAnyOrder(0, 1, 2)
   }
 }
