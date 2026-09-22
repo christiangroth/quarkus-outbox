@@ -10,6 +10,7 @@
 |------|-------------|
 | Reliable dispatch | Tasks are persisted before dispatch – no event is lost on crash |
 | Deduplication | Duplicate events with the same key are silently dropped |
+| Delayed / scheduled dispatch | Tasks can carry a `notBefore` instant; they stay pending but ineligible for pickup until then, and can be cancelled or rescheduled by deduplication key |
 | Partition pause / resume | Partitions can be paused (with optional reason and resume time) and auto-resumed |
 | Prioritisation | Tasks carry `HIGH`, `MEDIUM` (default), or `LOW` priority; high-priority tasks are dispatched first |
 | Retry with backoff | Configurable retry policy with per-attempt backoff delays |
@@ -91,7 +92,7 @@ The following diagram shows Quarkus Outbox within its operational context.
 
 | Port | Description |
 |------|-------------|
-| `ApplicationOutboxClient` | Application-facing API for enqueueing events and querying partitions |
+| `ApplicationOutboxClient` | Application-facing API for enqueueing (optionally delayed) events, cancelling/rescheduling pending tasks by deduplication key, and querying partitions |
 | `ArchiverPort` | Trigger archive cleanup (used by `ArchiverJob`) |
 | `PartitionCountReconciliationPort` | Trigger event type count reconciliation (used by `PartitionCountReconciliationJob`) |
 
@@ -129,14 +130,20 @@ All events carry `partition: ApplicationOutboxPartition`. Task events additional
 
 ### 7.1 Enqueue and Dispatch Flow
 
-1. Application calls `ApplicationOutboxClient.enqueue(event)`.
+1. Application calls `ApplicationOutboxClient.enqueue(event, notBefore = null)`.
 2. `ApplicationOutboxClientAdapter` delegates to `OutboxControllerAdapter.enqueue()`.
-3. `OutboxControllerAdapter` calls `TaskRepositoryPort.enqueue()`. If the task is a duplicate it is silently discarded; otherwise `PartitionRepositoryPort.incrementEventTypeCount()` is called, the `CoroutinesPort` is signalled, and `OutboxTaskEnqueuedEvent` is fired.
+3. `OutboxControllerAdapter` calls `TaskRepositoryPort.enqueue()`. If the task is a duplicate it is silently discarded; otherwise `PartitionRepositoryPort.incrementEventTypeCount()` is called, the `CoroutinesPort` is signalled, and `OutboxTaskEnqueuedEvent` is fired. When `notBefore` is in the future, a delayed coroutine additionally signals the partition once it is reached.
 4. The `PartitionWorkerStarter` coroutine loop wakes up and calls `OutboxControllerAdapter.dispatchTask()` repeatedly until no task remains.
-5. `OutboxControllerAdapter` claims a task via `TaskRepositoryPort.claim()`, calls `ApplicationOutboxDispatcher.dispatch()`, and handles the result:
-   - **Success** → archives via `ArchivedTaskRepositoryPort.append()`, deletes the task, decrements the event type counter, fires `OutboxTaskDispatchedEvent`.
+5. `OutboxControllerAdapter` claims a task via `TaskRepositoryPort.claim()` (which excludes tasks whose `notBefore` is still in the future), calls `ApplicationOutboxDispatcher.dispatch()`, and handles the result:
+   - **Success** → archives via `ArchivedTaskRepositoryPort.append()`, deletes the task, decrements the event type counter, fires `OutboxTaskDispatchedEvent`. A recurring task's handler can call `enqueue()` again here for its next occurrence.
    - **Pause** → reschedules the task (fires `OutboxTaskRescheduledEvent`), optionally pauses the partition, fires `OutboxPartitionPausedEvent`, schedules delayed reactivation when `pausedUntil` is set.
    - **Failed** → retries with backoff (fires `OutboxTaskRetryScheduledEvent`) or archives as permanently failed and decrements the event type counter (fires `OutboxTaskFailedEvent`).
+
+### 7.1a Delayed Dispatch, Cancel, and Reschedule
+
+A task enqueued with a future `notBefore` is persisted immediately (and is visible via `eventsForPartition`/`partitionInfos` like any other `PENDING` task) but is excluded from `TaskRepositoryPort.claim()` until that instant passes – there is no separate "delayed" status, only a `PENDING` task with a future `notBefore`.
+
+`ApplicationOutboxClient.cancel(partition, deduplicationKey)` and `.reschedule(partition, deduplicationKey, notBefore)` operate on the still-`PENDING` task with that `deduplicationKey`, returning `false` as a no-op if it is no longer pending (already claimed, dispatched, or never existed). These allow a consumer to supersede an already-enqueued delayed task, e.g. when the schedule it was derived from changes, and together with a handler that re-enqueues its own successor on `DispatchResult.Success`, they support cron-style recurring dispatch without the library parsing or evaluating cron expressions itself.
 
 ### 7.2 Startup Recovery
 
@@ -148,6 +155,7 @@ On every application start, `PartitionWorkerStarter.onStart()` (with `@Priority(
    - If `PAUSED` and `pausedUntil` is `null` → leaves partition paused (manual pause).
    - If `PAUSED` and `pausedUntil` has passed → immediately reactivates.
    - If `PAUSED` and `pausedUntil` is in the future → schedules a delayed coroutine to reactivate later.
+   - When reactivating (immediately or after a delayed pause), also schedules delayed signals for the earliest pending retry (`scheduleRetryWakeupIfNeeded`) and the earliest pending `notBefore` (`scheduleDelayedWakeupIfNeeded`), if any.
 3. Starts one coroutine worker per partition.
 
 ### 7.3 Archive Cleanup
@@ -242,6 +250,8 @@ Before inserting a task, `TaskRepositoryAdapter.enqueue` checks for an existing 
 | ADR-6 | CDI async events | Decoupled lifecycle notifications; applications observe only the events they care about |
 | ADR-7 | Hexagonal modules | Each module has a single clear responsibility; adapters are interchangeable |
 | ADR-8 | Incremental event type counters with periodic reconciliation | Avoids a per-partition aggregation query on every `partitionInfos()` call; a daily reconciliation job corrects drift from the lack of cross-write transactions |
+| ADR-9 | `notBefore` as a plain field on `PENDING` tasks, no separate "delayed" status | Keeps the state machine unchanged (`PENDING` / `PROCESSING` / `DONE` / `FAILED`); only the claim query gains a condition |
+| ADR-10 | Recurring dispatch via handler self-re-enqueue, not framework-level cron | Cron parsing/evaluation is consumer-specific business logic and does not belong in a generic outbox library; re-enqueueing composes with the existing `enqueue`/`cancel`/`reschedule` API |
 
 ---
 
