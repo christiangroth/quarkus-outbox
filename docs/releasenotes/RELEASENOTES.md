@@ -1,3 +1,12 @@
+# 0.9.0 (2026.09.22)
+
+## New Features
+* group-id-ordering: Added an optional per-task `groupId` so unrelated tasks within the same outbox partition can be processed concurrently, while tasks sharing a `groupId` stay strictly ordered.
+* group-id-ordering: Partitions can now be configured to run with more than one worker via `ApplicationOutboxPartition.workerCount` (defaults to `1`, unchanged behavior).
+
+
+
+---
 # 0.8.5 (2026.09.22)
 
 ## Bugfixes / Chore
