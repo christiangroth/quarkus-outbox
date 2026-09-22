@@ -73,11 +73,13 @@ class PartitionWorkerStarterTests {
     )
     every { executionAdapter.activatePartition(partition) } just runs
     every { executionAdapter.scheduleRetryWakeupIfNeeded(partition) } just runs
+    every { executionAdapter.scheduleDelayedWakeupIfNeeded(partition) } just runs
 
     recovery.onStart(startupEvent)
 
     verify { executionAdapter.activatePartition(partition) }
     verify { executionAdapter.scheduleRetryWakeupIfNeeded(partition) }
+    verify { executionAdapter.scheduleDelayedWakeupIfNeeded(partition) }
     verify { coroutinesPort.signal(partition) }
   }
 
@@ -110,11 +112,13 @@ class PartitionWorkerStarterTests {
     )
     every { executionAdapter.activatePartition(partition) } just runs
     every { executionAdapter.scheduleRetryWakeupIfNeeded(partition) } just runs
+    every { executionAdapter.scheduleDelayedWakeupIfNeeded(partition) } just runs
 
     recovery.onStart(startupEvent)
 
     verify { executionAdapter.activatePartition(partition) }
     verify { executionAdapter.scheduleRetryWakeupIfNeeded(partition) }
+    verify { executionAdapter.scheduleDelayedWakeupIfNeeded(partition) }
     verify { coroutinesPort.signal(partition) }
   }
 
@@ -153,6 +157,7 @@ class PartitionWorkerStarterTests {
     )
     every { executionAdapter.activatePartition(any()) } just runs
     every { executionAdapter.scheduleRetryWakeupIfNeeded(any()) } just runs
+    every { executionAdapter.scheduleDelayedWakeupIfNeeded(any()) } just runs
 
     recovery.onStart(startupEvent)
 
@@ -160,6 +165,8 @@ class PartitionWorkerStarterTests {
     verify { executionAdapter.activatePartition(partitionB) }
     verify { executionAdapter.scheduleRetryWakeupIfNeeded(partitionA) }
     verify { executionAdapter.scheduleRetryWakeupIfNeeded(partitionB) }
+    verify { executionAdapter.scheduleDelayedWakeupIfNeeded(partitionA) }
+    verify { executionAdapter.scheduleDelayedWakeupIfNeeded(partitionB) }
     verify { coroutinesPort.signal(partitionA) }
     verify { coroutinesPort.signal(partitionB) }
   }
@@ -177,6 +184,7 @@ class PartitionWorkerStarterTests {
     )
     every { executionAdapter.activatePartition(partition) } answers { activationOrder.add("activate") }
     every { executionAdapter.scheduleRetryWakeupIfNeeded(partition) } just runs
+    every { executionAdapter.scheduleDelayedWakeupIfNeeded(partition) } just runs
 
     recovery.onStart(startupEvent)
 
@@ -195,6 +203,7 @@ class PartitionWorkerStarterTests {
     )
     every { executionAdapter.activatePartition(partition) } just runs
     every { executionAdapter.scheduleRetryWakeupIfNeeded(partition) } just runs
+    every { executionAdapter.scheduleDelayedWakeupIfNeeded(partition) } just runs
 
     val waitCount = AtomicInteger(0)
     coEvery { coroutinesPort.waitOnSignal(partition) } answers { waitCount.incrementAndGet(); Unit }
@@ -234,6 +243,7 @@ class PartitionWorkerStarterTests {
     )
     every { executionAdapter.activatePartition(multiWorkerPartition) } just runs
     every { executionAdapter.scheduleRetryWakeupIfNeeded(multiWorkerPartition) } just runs
+    every { executionAdapter.scheduleDelayedWakeupIfNeeded(multiWorkerPartition) } just runs
 
     val observedWorkerIndices = java.util.concurrent.ConcurrentHashMap.newKeySet<Int>()
     listOf(0, 1, 2).forEach { workerIndex ->

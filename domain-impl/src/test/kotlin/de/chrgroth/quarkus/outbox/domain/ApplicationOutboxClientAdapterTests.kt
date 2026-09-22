@@ -7,6 +7,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.time.Instant
 
 class ApplicationOutboxClientAdapterTests {
 
@@ -29,11 +30,11 @@ class ApplicationOutboxClientAdapterTests {
 
   @Test
   fun `enqueue delegates to controller adapter with all event fields`() {
-    every { controllerAdapter.enqueue(partition, event, event.serializePayload, event.priority) } returns true
+    every { controllerAdapter.enqueue(partition, event, event.serializePayload, event.priority, null) } returns true
 
     clientAdapter.enqueue(event)
 
-    verify { controllerAdapter.enqueue(partition, event, event.serializePayload, event.priority) }
+    verify { controllerAdapter.enqueue(partition, event, event.serializePayload, event.priority, null) }
   }
 
   @Test
@@ -45,11 +46,11 @@ class ApplicationOutboxClientAdapterTests {
       override val deduplicationKey = "dedup-high"
       override val serializePayload = "{}"
     }
-    every { controllerAdapter.enqueue(partition, highPriorityEvent, "{}", OutboxEventPriority.HIGH) } returns true
+    every { controllerAdapter.enqueue(partition, highPriorityEvent, "{}", OutboxEventPriority.HIGH, null) } returns true
 
     clientAdapter.enqueue(highPriorityEvent)
 
-    verify { controllerAdapter.enqueue(partition, highPriorityEvent, "{}", OutboxEventPriority.HIGH) }
+    verify { controllerAdapter.enqueue(partition, highPriorityEvent, "{}", OutboxEventPriority.HIGH, null) }
   }
 
   @Test
@@ -61,11 +62,42 @@ class ApplicationOutboxClientAdapterTests {
       override val deduplicationKey = "dedup-low"
       override val serializePayload = "{}"
     }
-    every { controllerAdapter.enqueue(partition, lowPriorityEvent, "{}", OutboxEventPriority.LOW) } returns true
+    every { controllerAdapter.enqueue(partition, lowPriorityEvent, "{}", OutboxEventPriority.LOW, null) } returns true
 
     clientAdapter.enqueue(lowPriorityEvent)
 
-    verify { controllerAdapter.enqueue(partition, lowPriorityEvent, "{}", OutboxEventPriority.LOW) }
+    verify { controllerAdapter.enqueue(partition, lowPriorityEvent, "{}", OutboxEventPriority.LOW, null) }
+  }
+
+  @Test
+  fun `enqueue delegates with notBefore when given`() {
+    val notBefore = Instant.now().plusSeconds(120)
+    every { controllerAdapter.enqueue(partition, event, event.serializePayload, event.priority, notBefore) } returns true
+
+    clientAdapter.enqueue(event, notBefore)
+
+    verify { controllerAdapter.enqueue(partition, event, event.serializePayload, event.priority, notBefore) }
+  }
+
+  @Test
+  fun `cancel delegates to controller adapter`() {
+    every { controllerAdapter.cancel(partition, "dedup-1") } returns true
+
+    val result = clientAdapter.cancel(partition, "dedup-1")
+
+    assertThat(result).isTrue()
+    verify { controllerAdapter.cancel(partition, "dedup-1") }
+  }
+
+  @Test
+  fun `reschedule delegates to controller adapter`() {
+    val notBefore = Instant.now().plusSeconds(60)
+    every { controllerAdapter.reschedule(partition, "dedup-1", notBefore) } returns true
+
+    val result = clientAdapter.reschedule(partition, "dedup-1", notBefore)
+
+    assertThat(result).isTrue()
+    verify { controllerAdapter.reschedule(partition, "dedup-1", notBefore) }
   }
 
   @Test

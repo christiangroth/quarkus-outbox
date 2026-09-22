@@ -95,7 +95,22 @@ class OrderService(private val outbox: Outbox) {
 }
 ```
 
-### 5. Configure
+### 5. Delayed / Recurring Dispatch (optional)
+
+```kotlin
+// enqueue for pickup no earlier than a given instant
+outboxClient.enqueue(myEvent, notBefore = Instant.now().plus(1, ChronoUnit.HOURS))
+
+// supersede a previously scheduled task when its due time changes
+outboxClient.reschedule(MyPartition.ORDERS, myEvent.deduplicationKey, newNotBefore)
+
+// or drop it entirely, e.g. when the schedule it was derived from is removed
+outboxClient.cancel(MyPartition.ORDERS, myEvent.deduplicationKey)
+```
+
+A recurring task can be built by having your `ApplicationOutboxDispatcher.dispatch()` implementation call `enqueue()` again for the next occurrence (with a new `notBefore`) once it returns `DispatchResult.Success`.
+
+### 6. Configure
 
 ```properties
 # application.properties

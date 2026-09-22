@@ -41,6 +41,11 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
             Filters.eq("nextRetryAt", null),
             Filters.lte("nextRetryAt", now),
           ),
+          Filters.or(
+            Filters.exists("notBefore", false),
+            Filters.eq("notBefore", null),
+            Filters.lte("notBefore", now),
+          ),
         ),
         Updates.combine(
           Updates.set("status", OutboxTaskStatus.PROCESSING.name),
@@ -64,6 +69,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
     event: ApplicationOutboxEvent,
     payload: String,
     priority: OutboxEventPriority,
+    notBefore: Instant?,
   ): Boolean {
     val deduplicationKey = event.deduplicationKey
     val existing = metricsRecorder.timed("outbox.task.dedupCheck") {
@@ -100,6 +106,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
         this.priority = priority.name
         this.priorityOrder = priority.sortOrder
         lastError = null
+        this.notBefore = notBefore
       })
     }
 
@@ -146,6 +153,46 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
         ),
       ).sort(Sorts.ascending("nextRetryAt")).first()
     }?.nextRetryAt
+
+  override fun findEarliestPendingNotBeforeAt(partition: ApplicationOutboxPartition): Instant? =
+    metricsRecorder.timed("outbox.task.findEarliestPendingNotBeforeAt") {
+      repository.mongoCollection().find(
+        Filters.and(
+          Filters.eq("partition", partition.key),
+          Filters.eq("status", OutboxTaskStatus.PENDING.name),
+          Filters.ne("notBefore", null),
+        ),
+      ).sort(Sorts.ascending("notBefore")).first()
+    }?.notBefore
+
+  override fun cancelByDeduplicationKey(partition: ApplicationOutboxPartition, deduplicationKey: String): OutboxTask? =
+    metricsRecorder.timed("outbox.task.cancelByDeduplicationKey") {
+      repository.mongoCollection().findOneAndDelete(
+        Filters.and(
+          Filters.eq("partition", partition.key),
+          Filters.eq("deduplicationKey", deduplicationKey),
+          Filters.eq("status", OutboxTaskStatus.PENDING.name),
+        ),
+      )
+    }?.toDomain()
+
+  override fun rescheduleByDeduplicationKey(partition: ApplicationOutboxPartition, deduplicationKey: String, notBefore: Instant?): OutboxTask? {
+    val now = Instant.now()
+    return metricsRecorder.timed("outbox.task.rescheduleByDeduplicationKey") {
+      repository.mongoCollection().findOneAndUpdate(
+        Filters.and(
+          Filters.eq("partition", partition.key),
+          Filters.eq("deduplicationKey", deduplicationKey),
+          Filters.eq("status", OutboxTaskStatus.PENDING.name),
+        ),
+        Updates.combine(
+          Updates.set("notBefore", notBefore),
+          Updates.set("updatedAt", now),
+        ),
+        FindOneAndUpdateOptions().returnDocument(ReturnDocument.AFTER),
+      )
+    }?.toDomain()
+  }
 
   override fun resetStaleProcessing() {
     val now = Instant.now()
@@ -203,6 +250,7 @@ class TaskRepositoryAdapter : TaskRepositoryPort {
     nextRetryAt = nextRetryAt,
     priority = runCatching { OutboxEventPriority.valueOf(priority) }.getOrDefault(OutboxEventPriority.MEDIUM),
     lastError = lastError,
+    notBefore = notBefore,
   )
 
   companion object : KLogging() {
