@@ -12,7 +12,7 @@ A Quarkus library that implements the [Transactional Outbox Pattern](https://mic
 - **Per-partition throttling** – optional minimum delay between consecutive dispatches
 - **Startup recovery** – stale `PROCESSING` tasks are reset and paused partitions are restored on restart
 - **Scheduled archive cleanup** – completed and failed tasks are pruned after a configurable retention period
-- **Observability** – built-in Micrometer counters/gauges and slow MongoDB query detection
+- **Observability** – built-in Micrometer counters/gauges and slow MongoDB query detection; MongoDB timings use the shared `mongodb.query` / `mongodb.slow.queries` metrics (`operation` tag prefixed `outbox.`)
 
 See the [Release Notes](docs/releasenotes/RELEASENOTES.md) for details on what's changed in each version.
 
@@ -126,7 +126,7 @@ outbox.archive.retention-days=90
 | `outbox.archive.enabled` | `true` | Enables writing completed/failed tasks to the archive; also gates the retention cleanup cron job when using `adapter-in-scheduler`. When `false`, any existing entries in the archive collection are cleared once at startup |
 | `outbox.archive.retention-days` | `365` | Number of days to retain archived tasks (only when using `adapter-in-scheduler`) |
 | `outbox.reconciliation.enabled` | `true` | Enables the daily job that corrects drift in persisted per-partition event type counts (only when using `adapter-in-scheduler`) |
-| `outbox.mongodb.slow-query-threshold-ms` | `100` | Threshold in milliseconds above which a MongoDB query is logged as slow |
+| `outbox.mongodb.slow-query-threshold-ms` | `100` | Threshold in milliseconds above which a MongoDB query is logged as slow and counted in `mongodb.slow.queries` |
 
 ### Partition Configuration
 

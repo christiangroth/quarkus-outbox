@@ -242,8 +242,8 @@ Configured via `RetryPolicy` (default in `domain-impl`). Default:
 | `outbox.archive.cleanup.deleted` | Counter | — |
 | `outbox.reconciliation.duration` | Timer | — |
 | `outbox.reconciliation.corrected` | Counter | — |
-| `outbox.mongodb.query.duration` | Timer | `operation` |
-| `outbox.mongodb.query.slow` | Counter | `operation` |
+| `mongodb.query` | Timer | `operation` (all values prefixed `outbox.`, e.g. `outbox.task.claim`) |
+| `mongodb.slow.queries` | Counter | `operation` (same values as `mongodb.query`) |
 
 ### Deduplication
 
