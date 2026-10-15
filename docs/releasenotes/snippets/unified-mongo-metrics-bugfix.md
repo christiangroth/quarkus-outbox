@@ -1,3 +1,0 @@
-* unified-mongo-metrics: **Breaking change for dashboards:** MongoDB timing metrics are now recorded as `mongodb.query` (timer) and `mongodb.slow.queries` (counter), the same names the consuming applications use, so outbox MongoDB work appears in existing panels. All outbox operations are tagged with an `operation` value prefixed `outbox.` (e.g. `outbox.task.claim`).
-* unified-mongo-metrics: The old metrics `outbox_mongodb_query_duration_*` and `outbox_mongodb_query_slow_total` are no longer emitted; update dashboards and alerts that use them.
-* unified-mongo-metrics: Timings are now also recorded for failing MongoDB operations and for the index synchronization at startup (`outbox.indexes.sync`).
