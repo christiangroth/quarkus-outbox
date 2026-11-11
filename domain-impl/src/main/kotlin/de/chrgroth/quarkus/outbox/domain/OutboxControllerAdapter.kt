@@ -16,6 +16,8 @@ import io.micrometer.core.instrument.Gauge
 import io.micrometer.core.instrument.MeterRegistry
 import jakarta.enterprise.context.ApplicationScoped
 import jakarta.enterprise.event.Event
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import mu.KLogging
@@ -44,6 +46,7 @@ class OutboxControllerAdapter(
 ) {
 
   private val retryPolicy = RetryPolicy()
+  private val pendingWakeups = ConcurrentHashMap<String, PendingWakeup>()
   private val enqueuedCounters = ConcurrentHashMap<String, Counter>()
   private val processedCounters = ConcurrentHashMap<String, Counter>()
   private val failedCounters = ConcurrentHashMap<String, Counter>()
@@ -239,14 +242,34 @@ class OutboxControllerAdapter(
     }
   }
 
-  /** Schedules a coroutine that signals [partition] once [at] is reached (retry, delayed dispatch, or reschedule). */
+  /**
+   * Schedules a coroutine that signals [partition] once [at] is reached (retry, delayed dispatch, or reschedule).
+   *
+   * At most one wakeup is kept pending per partition: if one is already scheduled for the same or an earlier instant the call is a no-op,
+   * otherwise the pending (later) wakeup is replaced. Later due times are re-discovered by [scheduleRetryWakeupIfNeeded] and
+   * [scheduleDelayedWakeupIfNeeded], which the partition worker calls whenever it runs out of claimable tasks.
+   */
   private fun scheduleSignalAt(partition: ApplicationOutboxPartition, at: Instant) {
     val delayMs = maxOf(0L, at.toEpochMilli() - Instant.now().toEpochMilli())
-    coroutinesPort.getScope().launch {
-      delay(delayMs)
-      coroutinesPort.signal(partition)
+    pendingWakeups.compute(partition.key) { _, existing ->
+      if (existing != null && existing.job.isActive && !existing.at.isAfter(at)) {
+        existing
+      } else {
+        existing?.job?.cancel()
+        lateinit var wakeup: PendingWakeup
+        val job = coroutinesPort.getScope().launch(start = CoroutineStart.LAZY) {
+          delay(delayMs)
+          pendingWakeups.remove(partition.key, wakeup)
+          coroutinesPort.signal(partition)
+        }
+        wakeup = PendingWakeup(at, job)
+        job.start()
+        wakeup
+      }
     }
   }
+
+  private class PendingWakeup(val at: Instant, val job: Job)
 
   companion object : KLogging()
 }

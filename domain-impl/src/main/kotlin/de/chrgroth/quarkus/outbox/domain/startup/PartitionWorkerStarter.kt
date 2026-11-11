@@ -97,6 +97,10 @@ class PartitionWorkerStarter(
               delay(throttleInterval.toMillis())
             }
           } while (processed && isActive)
+
+          // Worker is idle: make sure the next pending retry / notBefore of this partition wakes it up again (timers are in-memory only).
+          executionAdapter.scheduleRetryWakeupIfNeeded(partition)
+          executionAdapter.scheduleDelayedWakeupIfNeeded(partition)
         } catch (e: CancellationException) {
           throw e
         } catch (e: Exception) {
