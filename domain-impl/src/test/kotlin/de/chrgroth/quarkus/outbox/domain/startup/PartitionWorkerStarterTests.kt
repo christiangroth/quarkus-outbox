@@ -192,6 +192,33 @@ class PartitionWorkerStarterTests {
   }
 
   @Test
+  fun `partition worker schedules retry and delayed wakeups whenever it runs out of tasks`() {
+    every { executionAdapter.resetStaleProcessingTasks() } just runs
+    every { application.getAllPartitions() } returns listOf(partition)
+    every { partitionPort.findOrCreate(partition) } returns OutboxPartitionInfo(
+      key = partition.key,
+      status = OutboxPartitionStatus.ACTIVE,
+      statusReason = null,
+      pausedUntil = null,
+    )
+    every { executionAdapter.activatePartition(partition) } just runs
+    every { executionAdapter.scheduleRetryWakeupIfNeeded(partition) } just runs
+    every { executionAdapter.scheduleDelayedWakeupIfNeeded(partition) } just runs
+    every { executionAdapter.dispatchTask(partition, any()) } returnsMany listOf(true, false)
+
+    val signals = AtomicInteger(0)
+    coEvery { coroutinesPort.waitOnSignal(partition, any()) } coAnswers {
+      if (signals.getAndIncrement() > 0) delay(Long.MAX_VALUE)
+    }
+
+    recovery.onStart(startupEvent)
+
+    // once at startup, once after the worker drained the partition
+    verify(timeout = 2000, exactly = 2) { executionAdapter.scheduleDelayedWakeupIfNeeded(partition) }
+    verify(timeout = 2000, exactly = 2) { executionAdapter.scheduleRetryWakeupIfNeeded(partition) }
+  }
+
+  @Test
   fun `partition worker survives exception from dispatchTask and waits for next signal`() {
     every { executionAdapter.resetStaleProcessingTasks() } just runs
     every { application.getAllPartitions() } returns listOf(partition)

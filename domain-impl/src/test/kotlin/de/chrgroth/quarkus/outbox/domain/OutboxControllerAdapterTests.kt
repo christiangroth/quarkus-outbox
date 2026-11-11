@@ -594,6 +594,65 @@ class OutboxControllerAdapterTests {
   }
 
   @Test
+  fun `repeated wakeup scheduling keeps only one pending signal per partition`() {
+    every { taskPort.findEarliestPendingNotBeforeAt(partition) } returns Instant.now().plusMillis(300)
+
+    repeat(5) { adapter.scheduleDelayedWakeupIfNeeded(partition) }
+
+    verify(timeout = 3000) { coroutinesPort.signal(partition) }
+    Thread.sleep(500)
+    verify(exactly = 1) { coroutinesPort.signal(partition) }
+  }
+
+  @Test
+  fun `an earlier wakeup replaces a later pending one and a later one is ignored`() {
+    every { taskPort.findEarliestPendingNotBeforeAt(partition) } returnsMany listOf(
+      Instant.now().plusSeconds(60),
+      Instant.now().plusMillis(200),
+      Instant.now().plusSeconds(120),
+    )
+
+    repeat(3) { adapter.scheduleDelayedWakeupIfNeeded(partition) }
+
+    verify(timeout = 3000) { coroutinesPort.signal(partition) }
+    Thread.sleep(500)
+    verify(exactly = 1) { coroutinesPort.signal(partition) }
+  }
+
+  @Test
+  fun `a wakeup can be scheduled again once the previous one has fired`() {
+    every { taskPort.findEarliestPendingNotBeforeAt(partition) } returnsMany listOf(
+      Instant.now().plusMillis(100),
+      Instant.now().plusMillis(100),
+    )
+
+    adapter.scheduleDelayedWakeupIfNeeded(partition)
+    verify(timeout = 3000, exactly = 1) { coroutinesPort.signal(partition) }
+    adapter.scheduleDelayedWakeupIfNeeded(partition)
+
+    verify(timeout = 3000, exactly = 2) { coroutinesPort.signal(partition) }
+  }
+
+  @Test
+  fun `consecutive delayed tasks after a restart are both woken up without a further enqueue`() {
+    // simulates: startup schedules the earliest notBefore, the worker drains it, goes idle and re-schedules the next one
+    every { taskPort.findEarliestPendingNotBeforeAt(partition) } returnsMany listOf(
+      Instant.now().plusMillis(100),
+      Instant.now().plusMillis(200),
+      null,
+    )
+
+    adapter.scheduleDelayedWakeupIfNeeded(partition)
+    verify(timeout = 3000, exactly = 1) { coroutinesPort.signal(partition) }
+    adapter.scheduleDelayedWakeupIfNeeded(partition)
+    verify(timeout = 3000, exactly = 2) { coroutinesPort.signal(partition) }
+    adapter.scheduleDelayedWakeupIfNeeded(partition)
+
+    Thread.sleep(300)
+    verify(exactly = 2) { coroutinesPort.signal(partition) }
+  }
+
+  @Test
   fun `paused task blocks all subsequent tasks in the partition`() {
     val task = task()
     val pausedInfo = OutboxPartitionInfo(
