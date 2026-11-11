@@ -1,3 +1,11 @@
+# 0.10.2 (2026.11.11)
+
+## Bugfixes / Chore
+* delayed-wakeup-after-drain: Delayed and retried tasks are now reliably dispatched when due, even if several different due times were pending after an application restart.
+
+
+
+---
 # 0.10.1 (2026.10.15)
 
 ## Bugfixes / Chore
